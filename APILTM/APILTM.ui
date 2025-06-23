@@ -395,7 +395,7 @@
    <property name="title">
     <string>动态测量参数设置</string>
    </property>
-   <widget class="QCheckBox" name="checkBox">
+   <widget class="QCheckBox" name="savaDyPoint">
     <property name="geometry">
      <rect>
       <x>10</x>

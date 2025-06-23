@@ -66,9 +66,5 @@ public:
     /**
      * @brief 点坐标测量
      */
-    void coordinatePointMeasure();
-    /**
-     * @brief 定向点测量
-     */
-    void orientationPiontMeasure();
+    void Measure();
 };
