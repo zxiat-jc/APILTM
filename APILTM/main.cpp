@@ -54,8 +54,8 @@ int main(int argc, char* argv[])
     QPluginManager::Instance().initializes(a.arguments(), error);
     QPluginManager::Instance().extensionsInitialized();
     QPluginManager::Instance().delayedInitialize();
-    void initLock(QApplication & a);
-    void initAdo(QApplication & a);
+    initLock(a);
+    initAdo(a);
     APILTM w;
     w.show();
     return a.exec();
