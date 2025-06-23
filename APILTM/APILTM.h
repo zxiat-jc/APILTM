@@ -3,6 +3,13 @@
 #include "ui_APILTM.h"
 #include <QtWidgets/QWidget>
 
+#include <cmath>
+#include <tuple>
+
+// 定义常量（如果尚未定义）
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 class APILTM : public QWidget {
     Q_OBJECT
 
@@ -13,11 +20,13 @@ public:
 
 private:
     Ui::APILTMClass ui;
-    QString selectedText = "RRR 1.5in"; //
-    QString sigleMeasureType = "点坐标测量";
-    QString dynamicsMeasureType = "稳定点模式";
+    QString selectedText = "RRR 1.5in"; // 把球类型
+    QString sigleMeasureType = "点坐标测量"; // 测量类型
+    QString dynamicsMeasureType = "稳定点模式"; // 动态测量方式
     constexpr static const char* API = "API";
+    constexpr static const char* IP = "0.0.0.0"; // 测量仪器类型
     QString _instrumentType = "AT960"; // 默认测量仪器类型为跟踪仪
+
 public slots:
     /**
      * @brief 连接并初始化跟踪
@@ -58,14 +67,16 @@ public slots:
      * @param workpiece
      */
     void updateCoordinateSystems(const QString& workpiece);
-    /**
-     * @brief 测站名初始化
-     */
-    void initGetStations();
 
 public:
     /**
      * @brief 点坐标测量
      */
-    void Measure();
+    void coordinatePointMeasure();
+    /**
+     * @brief 定向点测量
+     */
+    void orientationPiontMeasure();
+    void listChange();
+    std::tuple<double, double, double> xyzToHvd(double x, double y, double z);
 };

@@ -16,11 +16,13 @@ APILTM::APILTM(QWidget* parent)
     : QWidget(parent)
 {
     ui.setupUi(this);
-    init();
-    initGetStations();
-    ui.groupBox_6->hide();
-    this->setAttribute(Qt::WA_DeleteOnClose);
-
+    init(); // 初始化
+    listChange(); // 列表改变
+    // 添加图片到指定位置
+    QPixmap red(":/res/p1.png");
+    // 设置图片大小
+    red = red.scaled(54, 41);
+    ui.lab_tupian->setPixmap(red);
     {
         connect(ui.startapi, &QPushButton::clicked, this, &APILTM::TrackconnectAndStart);
         connect(ui.refresh, &QPushButton::clicked, this, &APILTM::TrackRefresh);
@@ -60,10 +62,10 @@ APILTM::APILTM(QWidget* parent)
                     selectedText = "Auto";
                 }
                 TRACKER_INTERFACE->remove(API);
-                TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
+                TRACKER_INTERFACE->add(IP, API, _instrumentType, selectedText);
             });
 
-        TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
+        TRACKER_INTERFACE->add(IP, API, _instrumentType, selectedText);
     }
     // 测量模式选择QRadioButton
     {
@@ -125,6 +127,7 @@ APILTM::~APILTM()
 
 void APILTM::init()
 {
+    // 初始化仪器类型下拉框
     auto workpieces = MW::GetWorkpieces();
     if (workpieces.has_value()) {
         auto&& arr = workpieces.value();
@@ -134,13 +137,12 @@ void APILTM::init()
             ui.workpieceName->addItem(name);
         }
     } else {
-        // TOAST_TIP("获取工件失败");
+        TOAST_TIP("获取工件失败");
     }
     // 如果有工件，获取第一个工件的坐标系
     if (ui.workpieceName->count() > 0) {
         QString firstWorkpiece = ui.workpieceName->itemText(0);
         auto coordinateSystems = MW::GetWorkpiecesAxis(firstWorkpiece);
-
         if (coordinateSystems.has_value()) {
             ui.coordinateSystem->clear();
             for (const auto& system : coordinateSystems.value()) {
@@ -149,9 +151,39 @@ void APILTM::init()
                 ui.coordinateSystem->addItem(sysName);
             }
         } else {
-            // TOAST_TIP("获取坐标系失败");
+            TOAST_TIP("获取坐标系失败");
         }
     }
+    // 初始化获取跟踪仪列表
+    auto instrumentTypes = TRACKER_INTERFACE->supportType();
+    qDebug() << instrumentTypes;
+    if (instrumentTypes.isEmpty()) {
+        TOAST_TIP("没有可用的跟踪仪器类型");
+    } else {
+        for (const auto& tracker : instrumentTypes) {
+            ui.instrumentType->addItem(tracker);
+            _instrumentType = ui.instrumentType->currentText();
+        }
+    }
+    // 初始化测站
+    auto stations = MW::GetStations();
+    qDebug() << stations;
+    if (stations.has_value()) {
+        for (const auto& system : stations.value()) {
+            QJsonObject obj = system.toObject();
+            qDebug() << obj;
+            QString st = obj["name"].toString();
+            if (!st.isEmpty()) {
+                ui.stations->addItem(st);
+            }
+        }
+    } else {
+        TOAST_TIP("获取坐标系失败");
+    }
+}
+
+void APILTM::listChange()
+{
     // 连接信号槽：当工件选择变化时更新坐标系
     connect(ui.workpieceName, QOverload<int>::of(&QComboBox::currentIndexChanged),
         this, [this](int index) {
@@ -168,12 +200,12 @@ void APILTM::init()
             TRACKER_INTERFACE->remove(API);
             TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
         });
+    // 连接信号槽：测站选择变化时
     connect(ui.stations, &QComboBox::currentTextChanged, this,
         [this](const QString& stations) {
 
         });
 }
-
 void APILTM::TrackconnectAndStart()
 {
 
@@ -186,6 +218,9 @@ void APILTM::TrackconnectAndStart()
         if (TRACKER_INTERFACE->connect(API)) {
             if (TRACKER_INTERFACE->init(API)) {
                 TOAST_TIP("初始化成功");
+                QPixmap pix(":/res/p4.png");
+                pix = pix.scaled(54, 41);
+                ui.lab_tupian->setPixmap(pix);
                 QTimer::singleShot(1000, this, [this]() {
                     ui.signalmeasure->setEnabled(true);
                     ui.backbird->setEnabled(true);
@@ -194,6 +229,9 @@ void APILTM::TrackconnectAndStart()
                 });
             } else {
                 TOAST_TIP("初始化失败");
+                QPixmap pix(":/res/p1.png");
+                pix = pix.scaled(54, 41);
+                ui.lab_tupian->setPixmap(pix);
             }
         } else {
             TOAST_TIP("连接失败");
@@ -205,17 +243,26 @@ void APILTM::TrackRefresh()
 {
     if (TRACKER_INTERFACE->contains(API)) {
         TRACKER_INTERFACE->remove(API);
-        TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
+        TRACKER_INTERFACE->add(IP, API, _instrumentType, selectedText);
     }
 }
 
 void APILTM::TrackSignalMeasure()
 {
+    if (ui.workpieceName->currentIndex() < 0) {
+        TOAST_TIP("工件名称为空");
+        return;
+    }
+
     if (ui.piontname->text().isEmpty()) {
         TOAST_TIP("请先输入点名");
         return;
     }
-    Measure();
+    if (sigleMeasureType == "点坐标测量") {
+        coordinatePointMeasure();
+    } else if (sigleMeasureType == "定向点测量") {
+        orientationPiontMeasure();
+    }
 }
 
 void APILTM::TrackDynamicsMeasure()
@@ -251,23 +298,12 @@ void APILTM::TrackDynamicsMeasure()
         };
 
         if (ui.savaDyPoint->isChecked()) {
-            // 如果checkbox选中，则保存点坐标
-            if (sigleMeasureType == "点坐标测量") {
-                // 存入坐标系
-                bool success = MW::InsertWorkpiecePoint(ui.workpieceName->currentText(), ui.piontname->text(), QString::number(h), QString::number(v), QString::number(d), QString::number(px), QString::number(py), QString::number(pz), QString::number(p), dateTime);
-                if (success) {
-                    TOAST_TIP("点坐标测量成功");
-                } else {
-                    TOAST_TIP("保存失败");
-                }
-            } else if (sigleMeasureType == "定向点测量") {
-                // 存入观测值
-                bool success = MW::InsertObservation(ui.workpieceName->currentText(), ui.piontname->text(), ui.stations->currentText(), h, v, d, dateTime, hum, press);
-                if (success) {
-                    TOAST_TIP("定向点保存成功");
-                } else {
-                    TOAST_TIP("定向点保存失败");
-                }
+            // 存入坐标系
+            bool success = MW::InsertWorkpiecePoint(ui.workpieceName->currentText(), ui.piontname->text(), QString::number(h), QString::number(v), QString::number(d), QString::number(px), QString::number(py), QString::number(pz), QString::number(p), dateTime);
+            if (success) {
+                TOAST_TIP("点坐标测量成功");
+            } else {
+                TOAST_TIP("保存失败");
             }
         }
     }
@@ -307,8 +343,7 @@ void APILTM::onSelectInstrumentType(int index)
     QString selectedType = ui.instrumentType->itemText(index);
     qDebug() << "Selected type:" << selectedType;
 }
-
-void APILTM::Measure()
+void APILTM::coordinatePointMeasure()
 {
     LoadingDialog::ShowLoading(tr("正在测量..."), false, [this]() {
         // 是否反面测量false
@@ -332,7 +367,7 @@ void APILTM::Measure()
             });
 
             QDateTime instrumentTime = QDateTime::fromString(time, "yyyy-MM-dd hh:mm:ss.zzz");
-            if (!instrumentTime.isValid()){
+            if (!instrumentTime.isValid()) {
                 instrumentTime = QDateTime::currentDateTime();
             }
             QPair<QString, QString> dateTime = {
@@ -340,22 +375,54 @@ void APILTM::Measure()
                 instrumentTime.toString("hh:mm:ss")
             };
             // 如果checkbox选中，则保存点坐标
-            if (sigleMeasureType == "点坐标测量") {
-                // 存入坐标系
-                bool success = MW::InsertWorkpiecePoint(ui.workpieceName->currentText(), ui.piontname->text(), QString::number(h), QString::number(v), QString::number(d), QString::number(px), QString::number(py), QString::number(pz), QString::number(p), dateTime);
-                if (success) {
-                    TOAST_TIP("点坐标测量成功");
-                } else {
-                    TOAST_TIP("保存失败");
-                }
-            } else if (sigleMeasureType == "定向点测量") {
-                // 存入观测值
-                bool success = MW::InsertObservation(ui.workpieceName->currentText(), ui.piontname->text(), ui.stations->currentText(), h, v, d, dateTime, hum, press);
-                if (success) {
-                    TOAST_TIP("定向点保存成功");
-                } else {
-                    TOAST_TIP("定向点保存失败");
-                }
+            bool success = MW::InsertWorkpiecePoint(ui.workpieceName->currentText(), ui.piontname->text(), QString::number(h), QString::number(v), QString::number(d), QString::number(px), QString::number(py), QString::number(pz), QString::number(p), dateTime);
+            if (success) {
+                TOAST_TIP("点坐标测量成功");
+            } else {
+                TOAST_TIP("保存失败");
+            }
+        } else {
+            TOAST_TIP("测量失败");
+        }
+    });
+}
+
+void APILTM::orientationPiontMeasure()
+{
+    LoadingDialog::ShowLoading(tr("正在测量..."), false, [this]() {
+        // 是否反面测量false
+        auto&& opt = TRACKER_INTERFACE->measure(API, false);
+        if (opt.has_value()) {
+            auto&& data = opt.value();
+            auto&& [s, h, v, d, rx, ry, rz, p, px, py, pz, t, hum, press, time] = *data;
+            // UI更新通过主线程执行
+            QMetaObject::invokeMethod(this, [&]() {
+                ui.hum->setText(QString::number(hum));
+                ui.press->setText(QString::number(press));
+                QString pointname = Utils::SuffixAddOne(ui.piontname->text());
+                ui.piontname->setText(pointname);
+            });
+
+            QDateTime instrumentTime = QDateTime::fromString(time, "yyyy-MM-dd hh:mm:ss.zzz");
+            if (!instrumentTime.isValid()) {
+                instrumentTime = QDateTime::currentDateTime();
+            }
+            QPair<QString, QString> dateTime = {
+                instrumentTime.toString("yyyy-MM-dd"),
+                instrumentTime.toString("hh:mm:ss")
+            };
+            auto [h_rad, v_rad, distance] = xyzToHvd(h, v, d);
+            QMetaObject::invokeMethod(this, [&]() {
+                ui.hz_value->setText(QString::number(h_rad, 'f', 4));
+                ui.v_value->setText(QString::number(v_rad, 'f', 4));
+                ui.dis_value->setText(QString::number(distance, 'f', 4));
+            });
+            // 存入观测值
+            bool success = MW::InsertObservation(ui.workpieceName->currentText(), ui.piontname->text(), ui.stations->currentText(), h_rad, v_rad, distance, dateTime, hum, press);
+            if (success) {
+                TOAST_TIP("定向点保存成功");
+            } else {
+                TOAST_TIP("定向点保存失败");
             }
         } else {
             TOAST_TIP("测量失败");
@@ -387,21 +454,56 @@ void APILTM::updateCoordinateSystems(const QString& workpiece)
     }
 }
 
-void APILTM::initGetStations()
+// XYZ转HVD的转换函数
+std::tuple<double, double, double> APILTM::xyzToHvd(double x, double y, double z)
 {
-    MW::AddTracker("3", "0,0,0,0", "AT960");
-    auto stations = MW::GetStations();
-    qDebug() << stations;
-    if (stations.has_value()) {
-        for (const auto& system : stations.value()) {
-            QJsonObject obj = system.toObject();
-            qDebug() << obj;
-            QString st = obj["测站"].toString();
-            if (!st.isEmpty()) {
-                ui.stations->addItem(st);
-            }
+    // 处理零坐标情况
+    if (x == 0.0 && y == 0.0 && z == 0.0) {
+        return { 0.0, 0.0, 0.0 };
+    }
+
+    double hd = std::sqrt(x * x + y * y);
+    double v = 0.0;
+
+    // 处理垂直角计算中的除零问题
+    if (hd == 0 && z == 0) {
+        v = 0.0;
+    } else {
+        v = std::atan2(hd, z); // 使用atan2避免除零错误
+    }
+
+    double h = 0.0;
+
+    // 计算水平角
+    if (x == 0.0) {
+        if (y >= 0) {
+            h = 3 * M_PI / 2;
+        } else {
+            h = M_PI / 2;
         }
     } else {
-        // TOAST_TIP("获取坐标系失败");
+        if (x > 0) {
+            if (y > 0) {
+                h = 2 * M_PI - std::atan(y / x);
+            } else {
+                h = std::atan(-y / x);
+            }
+        } else {
+            if (y > 0) {
+                h = M_PI + std::atan(-y / x);
+            } else {
+                h = M_PI - std::atan(y / x);
+            }
+        }
     }
+
+    // 将水平角调整到[-π, π]范围内
+    if (h > M_PI) {
+        h -= 2 * M_PI;
+    } else if (h < -M_PI) {
+        h += 2 * M_PI;
+    }
+
+    double d = std::sqrt(x * x + y * y + z * z);
+    return { h, v, d };
 }

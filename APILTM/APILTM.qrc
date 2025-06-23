@@ -1,4 +1,8 @@
 <RCC>
-    <qresource prefix="APILTM">
+    <qresource prefix="/APILTM"/>
+    <qresource prefix="/">
+        <file>res/p1.png</file>
+        <file>res/p2.png</file>
+        <file>res/p4.png</file>
     </qresource>
 </RCC>
