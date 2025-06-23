@@ -17,6 +17,7 @@ private:
     QString sigleMeasureType = "点坐标测量";
     QString dynamicsMeasureType = "稳定点模式";
     constexpr static const char* API = "API";
+    QString _instrumentType = "AT960"; // 默认测量仪器类型为跟踪仪
 public slots:
     /**
      * @brief 连接并初始化跟踪

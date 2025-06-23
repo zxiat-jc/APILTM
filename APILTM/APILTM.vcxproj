@@ -99,6 +99,9 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Ado\Ado\Ado.vcxproj">
+      <Project>{da21a00b-bba5-4e53-960f-f4d9f75fb5bd}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\Ado\MetroinWrap\MetroinWrap.vcxproj">
       <Project>{04ae4451-53e2-489e-b99b-f8fb8dc3bab1}</Project>
     </ProjectReference>

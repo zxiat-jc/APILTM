@@ -60,10 +60,10 @@ APILTM::APILTM(QWidget* parent)
                     selectedText = "Auto";
                 }
                 TRACKER_INTERFACE->remove(API);
-                TRACKER_INTERFACE->add("0.0.0.0", API, "AT960", selectedText);
+                TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
             });
 
-        TRACKER_INTERFACE->add("0.0.0.0", API, "AT960", selectedText);
+        TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
     }
     // 测量模式选择QRadioButton
     {
@@ -164,13 +164,14 @@ void APILTM::init()
     connect(ui.instrumentType, &QComboBox::currentTextChanged, this,
         [this](const QString& text) {
             qDebug() << "Selected instrument type:" << text;
+            _instrumentType = text;
             TRACKER_INTERFACE->remove(API);
-            TRACKER_INTERFACE->add("0.0.0.0", API, text, selectedText);
+            TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
         });
-    // connect(ui.stations, &QComboBox::currentTextChanged, this,
-    //     [this](const QString& stations) {
-    //         // MW::SetStationIp(stations);
-    //     });
+    connect(ui.stations, &QComboBox::currentTextChanged, this,
+        [this](const QString& stations) {
+
+        });
 }
 
 void APILTM::TrackconnectAndStart()
@@ -204,7 +205,7 @@ void APILTM::TrackRefresh()
 {
     if (TRACKER_INTERFACE->contains(API)) {
         TRACKER_INTERFACE->remove(API);
-        TRACKER_INTERFACE->add("0.0.0.0", API, "AT960", selectedText);
+        TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
     }
 }
 
