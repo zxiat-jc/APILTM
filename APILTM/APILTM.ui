@@ -54,22 +54,10 @@
      <widget class="QLineEdit" name="lineEdit_4"/>
     </item>
     <item row="0" column="1">
-     <widget class="QComboBox" name="workpieceName">
-      <item>
-       <property name="text">
-        <string>Default</string>
-       </property>
-      </item>
-     </widget>
+     <widget class="QComboBox" name="workpieceName"/>
     </item>
     <item row="1" column="1">
-     <widget class="QComboBox" name="coordinateSystem">
-      <item>
-       <property name="text">
-        <string>Default/测量坐标系</string>
-       </property>
-      </item>
-     </widget>
+     <widget class="QComboBox" name="coordinateSystem"/>
     </item>
    </layout>
   </widget>
@@ -479,7 +467,7 @@
      <rect>
       <x>11</x>
       <y>120</y>
-      <width>201</width>
+      <width>230</width>
       <height>25</height>
      </rect>
     </property>

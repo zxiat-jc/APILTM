@@ -145,7 +145,7 @@ void APILTM::init()
             ui.coordinateSystem->clear();
             for (const auto& system : coordinateSystems.value()) {
                 QJsonObject obj = system.toObject();
-                QString sysName = obj["坐标系"].toString();
+                QString sysName = obj["name"].toString();
                 ui.coordinateSystem->addItem(sysName);
             }
         } else {
@@ -331,7 +331,10 @@ void APILTM::Measure()
                 ui.piontname->setText(pointname);
             });
 
-            QDateTime instrumentTime = QDateTime::fromString(time, "yyyy-MM-dd hh:mm:ss");
+            QDateTime instrumentTime = QDateTime::fromString(time, "yyyy-MM-dd hh:mm:ss.zzz");
+            if (!instrumentTime.isValid()){
+                instrumentTime = QDateTime::currentDateTime();
+            }
             QPair<QString, QString> dateTime = {
                 instrumentTime.toString("yyyy-MM-dd"),
                 instrumentTime.toString("hh:mm:ss")
@@ -373,7 +376,8 @@ void APILTM::updateCoordinateSystems(const QString& workpiece)
     if (coordinateSystems.has_value()) {
         for (const auto& system : coordinateSystems.value()) {
             QJsonObject obj = system.toObject();
-            QString sysName = obj["坐标系"].toString();
+            qDebug() << obj;
+            QString sysName = obj["name"].toString();
             if (!sysName.isEmpty()) {
                 ui.coordinateSystem->addItem(sysName);
             }
@@ -385,10 +389,13 @@ void APILTM::updateCoordinateSystems(const QString& workpiece)
 
 void APILTM::initGetStations()
 {
+    MW::AddTracker("3", "0,0,0,0", "AT960");
     auto stations = MW::GetStations();
+    qDebug() << stations;
     if (stations.has_value()) {
         for (const auto& system : stations.value()) {
             QJsonObject obj = system.toObject();
+            qDebug() << obj;
             QString st = obj["测站"].toString();
             if (!st.isEmpty()) {
                 ui.stations->addItem(st);
