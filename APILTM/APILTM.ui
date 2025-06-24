@@ -104,7 +104,7 @@
     </item>
    </layout>
   </widget>
-  <widget class="QLineEdit" name="lineEdit_5">
+  <widget class="QLineEdit" name="lineIP">
    <property name="geometry">
     <rect>
      <x>440</x>
@@ -857,7 +857,7 @@
      <x>410</x>
      <y>20</y>
      <width>143</width>
-     <height>60</height>
+     <height>82</height>
     </rect>
    </property>
    <layout class="QVBoxLayout" name="verticalLayout">
@@ -871,18 +871,7 @@
        </widget>
       </item>
       <item>
-       <widget class="QComboBox" name="instrumentType">
-        <item>
-         <property name="text">
-          <string>AT960</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>AT402</string>
-         </property>
-        </item>
-       </widget>
+       <widget class="QComboBox" name="instrumentType"/>
       </item>
      </layout>
     </item>
@@ -896,13 +885,7 @@
        </widget>
       </item>
       <item>
-       <widget class="QComboBox" name="stations">
-        <item>
-         <property name="text">
-          <string>1</string>
-         </property>
-        </item>
-       </widget>
+       <widget class="QComboBox" name="stations"/>
       </item>
      </layout>
     </item>
@@ -919,6 +902,19 @@
    </property>
    <property name="text">
     <string/>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_29">
+   <property name="geometry">
+    <rect>
+     <x>420</x>
+     <y>130</y>
+     <width>21</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>IP</string>
    </property>
   </widget>
  </widget>

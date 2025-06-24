@@ -37,7 +37,6 @@ APILTM::APILTM(QWidget* parent)
         ui.dynamicsmeasure->setEnabled(false);
         ui.stop->setEnabled(false);
         ui.lineEdit_4->setEnabled(false);
-        ui.lineEdit_5->setEnabled(false);
     }
 
     {
@@ -61,11 +60,7 @@ APILTM::APILTM(QWidget* parent)
                 } else if (button == ui.radioButton_4) {
                     selectedText = "Auto";
                 }
-                TRACKER_INTERFACE->remove(API);
-                TRACKER_INTERFACE->add(IP, API, _instrumentType, selectedText);
             });
-
-        TRACKER_INTERFACE->add(IP, API, _instrumentType, selectedText);
     }
     // 测量模式选择QRadioButton
     {
@@ -122,11 +117,38 @@ APILTM::~APILTM()
 {
     if (TRACKER_INTERFACE && TRACKER_INTERFACE->contains(API)) {
         TRACKER_INTERFACE->disconnect(API);
+        TRACKER_INTERFACE->remove(API);
     }
 }
 
 void APILTM::init()
 {
+    // 初始化获取跟踪仪列表
+    auto instrumentTypes = TRACKER_INTERFACE->supportType();
+    qDebug() << instrumentTypes;
+    if (instrumentTypes.isEmpty()) {
+        TOAST_TIP("没有可用的跟踪仪器类型");
+    } else {
+        for (const auto& tracker : instrumentTypes) {
+            ui.instrumentType->addItem(tracker);
+            _instrumentType = ui.instrumentType->currentText();
+        }
+    }
+    // 初始化测站
+    auto stations = MW::GetStations();
+    qDebug() << stations;
+    if (stations.has_value()) {
+        for (const auto& system : stations.value()) {
+            QJsonObject obj = system.toObject();
+            qDebug() << obj;
+            QString st = obj["name"].toString();
+            if (!st.isEmpty()) {
+                ui.stations->addItem(st);
+            }
+        }
+    } else {
+        TOAST_TIP("获取测站失败");
+    }
     // 初始化仪器类型下拉框
     auto workpieces = MW::GetWorkpieces();
     if (workpieces.has_value()) {
@@ -154,32 +176,6 @@ void APILTM::init()
             TOAST_TIP("获取坐标系失败");
         }
     }
-    // 初始化获取跟踪仪列表
-    auto instrumentTypes = TRACKER_INTERFACE->supportType();
-    qDebug() << instrumentTypes;
-    if (instrumentTypes.isEmpty()) {
-        TOAST_TIP("没有可用的跟踪仪器类型");
-    } else {
-        for (const auto& tracker : instrumentTypes) {
-            ui.instrumentType->addItem(tracker);
-            _instrumentType = ui.instrumentType->currentText();
-        }
-    }
-    // 初始化测站
-    auto stations = MW::GetStations();
-    qDebug() << stations;
-    if (stations.has_value()) {
-        for (const auto& system : stations.value()) {
-            QJsonObject obj = system.toObject();
-            qDebug() << obj;
-            QString st = obj["name"].toString();
-            if (!st.isEmpty()) {
-                ui.stations->addItem(st);
-            }
-        }
-    } else {
-        TOAST_TIP("获取坐标系失败");
-    }
 }
 
 void APILTM::listChange()
@@ -192,29 +188,42 @@ void APILTM::listChange()
                 updateCoordinateSystems(workpiece);
             }
         });
-    // 连接信号槽：仪器类型选择变化时重新连接
+    // 连接信号槽：仪器类型选择变化
     connect(ui.instrumentType, &QComboBox::currentTextChanged, this,
         [this](const QString& text) {
             qDebug() << "Selected instrument type:" << text;
             _instrumentType = text;
-            TRACKER_INTERFACE->remove(API);
-            TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
         });
-    // 连接信号槽：测站选择变化时
-    connect(ui.stations, &QComboBox::currentTextChanged, this,
-        [this](const QString& stations) {
+    //// 连接信号槽：测站选择变化时
+    // connect(ui.stations, &QComboBox::currentTextChanged, this,
+    //     [this](const QString& stations) {
 
-        });
+    //    });
 }
 void APILTM::TrackconnectAndStart()
 {
 
+    if (ui.lineIP->text().isEmpty() && _instrumentType != "API") {
+        TOAST_TIP("请输入仪器IP地址");
+        return;
+    }
+    if (_instrumentType == "API") {
+        TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
+        auto apiIPAdess = TRACKER_INTERFACE->ip(API);
+        if (apiIPAdess.has_value()) {
+            ui.lineIP->setText(apiIPAdess.value());
+        } else {
+            TOAST_TIP("获取API IP地址失败");
+            return;
+        }
+    }
     if (ui.instrumentType->currentIndex() < 0) {
         TOAST_TIP("请选择仪器类型");
         return;
     }
 
     LoadingDialog::ShowLoading(tr("正在初始化..."), false, [&]() {
+        TRACKER_INTERFACE->add(ui.lineIP->text(), API, _instrumentType, selectedText);
         if (TRACKER_INTERFACE->connect(API)) {
             if (TRACKER_INTERFACE->init(API)) {
                 TOAST_TIP("初始化成功");
@@ -241,9 +250,26 @@ void APILTM::TrackconnectAndStart()
 
 void APILTM::TrackRefresh()
 {
+    bool ad;
     if (TRACKER_INTERFACE->contains(API)) {
-        TRACKER_INTERFACE->remove(API);
-        TRACKER_INTERFACE->add(IP, API, _instrumentType, selectedText);
+        bool re = TRACKER_INTERFACE->remove(API);
+        if (_instrumentType == "API") {
+            ad = TRACKER_INTERFACE->add(IP, API, _instrumentType, selectedText);
+        } else {
+            ad = TRACKER_INTERFACE->add(ui.lineIP->text(), API, _instrumentType, selectedText);
+        }
+        bool co = TRACKER_INTERFACE->connect(API);
+        if (re && ad && co) {
+            TOAST_TIP("刷新成功");
+            QPixmap pix(":/res/p4.png");
+            pix = pix.scaled(54, 41);
+            ui.lab_tupian->setPixmap(pix);
+        } else {
+            TOAST_TIP("刷新失败");
+            QPixmap pix(":/res/p1.png");
+            pix = pix.scaled(54, 41);
+            ui.lab_tupian->setPixmap(pix);
+        }
     }
 }
 
@@ -269,28 +295,35 @@ void APILTM::TrackDynamicsMeasure()
 {
     // 初始化按钮组
     if (dynamicsMeasureType == "时间间隔模式") {
-        TRACKER_INTERFACE->setProfileTime(ui.stations->currentText(), ui.stabilitytime->text().toDouble());
+        TRACKER_INTERFACE->setProfileTime(API, ui.stabilitytime->text().toDouble());
     } else if (dynamicsMeasureType == "距离间隔模式") {
-        TRACKER_INTERFACE->setProfileDistance(ui.stations->currentText(), ui.stabilitydis->text().toDouble() * 1000);
+        TRACKER_INTERFACE->setProfileDistance(API, ui.stabilitydis->text().toDouble() * 1000);
     } else if (dynamicsMeasureType == "稳定点模式") {
-        TRACKER_INTERFACE->setProfileTime(ui.stations->currentText(), ui.stabilitytime->text().toDouble() * 1000);
-        TRACKER_INTERFACE->setProfileDistance(ui.stations->currentText(), ui.stabilitydis->text().toDouble() * 1000);
+        qDebug() << ui.stations->currentText();
+        qDebug() << ui.stabilitytime->text().toDouble() * 1000;
+        bool tim = TRACKER_INTERFACE->setProfileTime(API, ui.stabilitytime->text().toDouble() * 1000);
+        bool dis = TRACKER_INTERFACE->setProfileDistance(API, ui.stabilitydis->text().toDouble() * 1000);
+        if (!tim && !dis) {
+            TOAST_TIP("设置稳定点模式失败，请检查时间和距离是否正确");
+            return;
+        }
     }
+    TRACKER_INTERFACE->startMeasure(API);
     auto&& opt = TRACKER_INTERFACE->measure(API, false);
     if (opt.has_value()) {
         auto&& data = opt.value();
         auto&& [s, h, v, d, rx, ry, rz, p, px, py, pz, t, hum, press, time] = *data;
-        ui.X->setText(QString::number(h, 'f', 4));
-        ui.Y->setText(QString::number(v, 'f', 4));
-        ui.Z->setText(QString::number(d, 'f', 4));
-        ui.RMSX->setText(QString::number(px, 'f', 4));
-        ui.RMSY->setText(QString::number(py, 'f', 4));
-        ui.RMSZ->setText(QString::number(pz, 'f', 4));
-        ui.RMS->setText(QString::number(p, 'f', 4));
+        ui.X->setText((F3(h)));
+        ui.Y->setText(F3(v));
+        ui.Z->setText(F3(d));
+        ui.RMSX->setText(F3(px, 'f', 4));
+        ui.RMSY->setText(F3(py, 'f', 4));
+        ui.RMSZ->setText(F3(pz, 'f', 4));
+        ui.RMS->setText(F3(p, 'f', 4));
         ui.hum->setText(QString::number(hum));
         ui.press->setText(QString::number(press));
-        QString pointname = Utils::SuffixAddOne(ui.piontname->text());
-        ui.piontname->setText(pointname);
+        pointName = Utils::SuffixAddOne(ui.piontname->text());
+        ui.piontname->setText(pointName);
         QDateTime instrumentTime = QDateTime::fromString(time, "yyyy-MM-dd hh:mm:ss");
         QPair<QString, QString> dateTime = {
             instrumentTime.toString("yyyy-MM-dd"),
@@ -340,9 +373,10 @@ void APILTM::onSelectInstrumentType(int index)
     if (index < 0 || index >= ui.instrumentType->count()) {
         return; // 无效索引
     }
-    QString selectedType = ui.instrumentType->itemText(index);
-    qDebug() << "Selected type:" << selectedType;
+    _instrumentType = ui.instrumentType->itemText(index);
+    qDebug() << "Selected instrument type:" << _instrumentType;
 }
+
 void APILTM::coordinatePointMeasure()
 {
     LoadingDialog::ShowLoading(tr("正在测量..."), false, [this]() {
@@ -351,19 +385,20 @@ void APILTM::coordinatePointMeasure()
         if (opt.has_value()) {
             auto&& data = opt.value();
             auto&& [s, h, v, d, rx, ry, rz, p, px, py, pz, t, hum, press, time] = *data;
+
             // UI更新通过主线程执行
             QMetaObject::invokeMethod(this, [&]() {
-                ui.X->setText(QString::number(h, 'f', 4));
-                ui.Y->setText(QString::number(v, 'f', 4));
-                ui.Z->setText(QString::number(d, 'f', 4));
-                ui.RMSX->setText(QString::number(px, 'f', 4));
-                ui.RMSY->setText(QString::number(py, 'f', 4));
-                ui.RMSZ->setText(QString::number(pz, 'f', 4));
-                ui.RMS->setText(QString::number(p, 'f', 4));
+                ui.X->setText(F3(h));
+                ui.Y->setText(F3(v));
+                ui.Z->setText(F3(d));
+                ui.RMSX->setText(F3(px));
+                ui.RMSY->setText(F3(py));
+                ui.RMSZ->setText(F3(pz));
+                ui.RMS->setText(F3(p));
                 ui.hum->setText(QString::number(hum));
                 ui.press->setText(QString::number(press));
-                QString pointname = Utils::SuffixAddOne(ui.piontname->text());
-                ui.piontname->setText(pointname);
+                pointName = Utils::SuffixAddOne(ui.piontname->text());
+                ui.piontname->setText(pointName);
             });
 
             QDateTime instrumentTime = QDateTime::fromString(time, "yyyy-MM-dd hh:mm:ss.zzz");
@@ -374,6 +409,7 @@ void APILTM::coordinatePointMeasure()
                 instrumentTime.toString("yyyy-MM-dd"),
                 instrumentTime.toString("hh:mm:ss")
             };
+
             // 如果checkbox选中，则保存点坐标
             bool success = MW::InsertWorkpiecePoint(ui.workpieceName->currentText(), ui.piontname->text(), QString::number(h), QString::number(v), QString::number(d), QString::number(px), QString::number(py), QString::number(pz), QString::number(p), dateTime);
             if (success) {
@@ -399,8 +435,8 @@ void APILTM::orientationPiontMeasure()
             QMetaObject::invokeMethod(this, [&]() {
                 ui.hum->setText(QString::number(hum));
                 ui.press->setText(QString::number(press));
-                QString pointname = Utils::SuffixAddOne(ui.piontname->text());
-                ui.piontname->setText(pointname);
+                pointName = Utils::SuffixAddOne(ui.piontname->text());
+                ui.piontname->setText(pointName);
             });
 
             QDateTime instrumentTime = QDateTime::fromString(time, "yyyy-MM-dd hh:mm:ss.zzz");
@@ -411,14 +447,16 @@ void APILTM::orientationPiontMeasure()
                 instrumentTime.toString("yyyy-MM-dd"),
                 instrumentTime.toString("hh:mm:ss")
             };
-            auto [h_rad, v_rad, distance] = xyzToHvd(h, v, d);
+            double h_rad = RAD2DEG(h);
+            double v_rad = RAD2DEG(v);
+            double distance = d; // 斜距
             QMetaObject::invokeMethod(this, [&]() {
-                ui.hz_value->setText(QString::number(h_rad, 'f', 4));
-                ui.v_value->setText(QString::number(v_rad, 'f', 4));
-                ui.dis_value->setText(QString::number(distance, 'f', 4));
+                ui.hz_value->setText(F3(h_rad));
+                ui.v_value->setText(F3(v_rad));
+                ui.dis_value->setText(F3(distance));
             });
             // 存入观测值
-            bool success = MW::InsertObservation(ui.workpieceName->currentText(), ui.piontname->text(), ui.stations->currentText(), h_rad, v_rad, distance, dateTime, hum, press);
+            bool success = MW::InsertObservation(ui.workpieceName->currentText(), ui.piontname->text(), ui.stations->currentText(), h, v, d, dateTime, hum, press);
             if (success) {
                 TOAST_TIP("定向点保存成功");
             } else {
@@ -454,7 +492,6 @@ void APILTM::updateCoordinateSystems(const QString& workpiece)
     }
 }
 
-// XYZ转HVD的转换函数
 std::tuple<double, double, double> APILTM::xyzToHvd(double x, double y, double z)
 {
     // 处理零坐标情况

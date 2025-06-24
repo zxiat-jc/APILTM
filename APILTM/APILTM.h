@@ -24,8 +24,9 @@ private:
     QString sigleMeasureType = "点坐标测量"; // 测量类型
     QString dynamicsMeasureType = "稳定点模式"; // 动态测量方式
     constexpr static const char* API = "API";
-    constexpr static const char* IP = "0.0.0.0"; // 测量仪器类型
-    QString _instrumentType = "AT960"; // 默认测量仪器类型为跟踪仪
+    constexpr static const char* IP = "192.168.31.237"; // 测量仪器类型
+    QString _instrumentType;
+    QString pointName; // 点名称
 
 public slots:
     /**
@@ -77,6 +78,16 @@ public:
      * @brief 定向点测量
      */
     void orientationPiontMeasure();
+    /**
+     * @brief 列表改变
+     */
     void listChange();
+    /**
+     * @brief 坐标转化
+     * @param x X坐标
+     * @param y Y坐标
+     * @param z Z坐标
+     * @return hvd（高度、垂直度、偏移量）坐标
+     */
     std::tuple<double, double, double> xyzToHvd(double x, double y, double z);
 };
