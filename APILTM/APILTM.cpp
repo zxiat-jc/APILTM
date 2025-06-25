@@ -111,6 +111,33 @@ APILTM::APILTM(QWidget* parent)
                 }
             });
     }
+
+    QTimer* timer = new QTimer(this);
+    connect(timer, &QTimer::timeout, this, [this]() {
+        auto st = TRACKER_INTERFACE->status(API);
+
+        if (st == TrackerEnum::MeasurmentStatus::ReadyToMeasure) {
+            // 测量准备就绪
+            QPixmap pix(":/res/p4.png");
+            pix = pix.scaled(54, 41);
+            ui.lab_tupian->setPixmap(pix);
+            ui.signalmeasure->setEnabled(true);
+            ui.backbird->setEnabled(true);
+            ui.dynamicsmeasure->setEnabled(true);
+            ui.stop->setEnabled(true);
+        } else if (st == TrackerEnum::MeasurmentStatus::MeasurementInProgress) {
+            // 测量进行中
+            QPixmap pix(":/res/p2.png");
+            pix = pix.scaled(54, 41);
+            ui.lab_tupian->setPixmap(pix);
+        } else {
+            // 测量未就绪或无效状态
+            QPixmap pix(":/res/p1.png");
+            pix = pix.scaled(54, 41);
+            ui.lab_tupian->setPixmap(pix);
+        }
+    });
+    timer->start(1000); // 每500ms检查一次
 }
 
 APILTM::~APILTM()
@@ -200,6 +227,7 @@ void APILTM::listChange()
 
     //    });
 }
+
 void APILTM::TrackconnectAndStart()
 {
 
@@ -208,7 +236,11 @@ void APILTM::TrackconnectAndStart()
         return;
     }
     if (_instrumentType == "API") {
-        TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
+        if (ui.lineIP->text().isEmpty()) {
+            TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
+            TRACKER_INTERFACE->connect(API);
+            return;
+        }
         auto apiIPAdess = TRACKER_INTERFACE->ip(API);
         if (apiIPAdess.has_value()) {
             ui.lineIP->setText(apiIPAdess.value());
@@ -221,7 +253,7 @@ void APILTM::TrackconnectAndStart()
         TOAST_TIP("请选择仪器类型");
         return;
     }
-
+    QString IP = ui.lineIP->text();
     LoadingDialog::ShowLoading(tr("正在初始化..."), false, [&]() {
         TRACKER_INTERFACE->add(ui.lineIP->text(), API, _instrumentType, selectedText);
         if (TRACKER_INTERFACE->connect(API)) {
@@ -251,25 +283,23 @@ void APILTM::TrackconnectAndStart()
 void APILTM::TrackRefresh()
 {
     bool ad;
-    if (TRACKER_INTERFACE->contains(API)) {
-        bool re = TRACKER_INTERFACE->remove(API);
-        if (_instrumentType == "API") {
-            ad = TRACKER_INTERFACE->add(IP, API, _instrumentType, selectedText);
-        } else {
-            ad = TRACKER_INTERFACE->add(ui.lineIP->text(), API, _instrumentType, selectedText);
-        }
-        bool co = TRACKER_INTERFACE->connect(API);
-        if (re && ad && co) {
-            TOAST_TIP("刷新成功");
-            QPixmap pix(":/res/p4.png");
-            pix = pix.scaled(54, 41);
-            ui.lab_tupian->setPixmap(pix);
-        } else {
-            TOAST_TIP("刷新失败");
-            QPixmap pix(":/res/p1.png");
-            pix = pix.scaled(54, 41);
-            ui.lab_tupian->setPixmap(pix);
-        }
+    bool re = TRACKER_INTERFACE->remove(API);
+    if (_instrumentType == "API") {
+        ad = TRACKER_INTERFACE->add(IP, API, _instrumentType, selectedText);
+    } else {
+        ad = TRACKER_INTERFACE->add(ui.lineIP->text(), API, _instrumentType, selectedText);
+    }
+    bool co = TRACKER_INTERFACE->connect(API);
+    if (re && ad && co) {
+        TOAST_TIP("刷新成功");
+        QPixmap pix(":/res/p4.png");
+        pix = pix.scaled(54, 41);
+        ui.lab_tupian->setPixmap(pix);
+    } else {
+        TOAST_TIP("刷新失败");
+        QPixmap pix(":/res/p1.png");
+        pix = pix.scaled(54, 41);
+        ui.lab_tupian->setPixmap(pix);
     }
 }
 
@@ -308,7 +338,6 @@ void APILTM::TrackDynamicsMeasure()
             return;
         }
     }
-    TRACKER_INTERFACE->startMeasure(API);
     auto&& opt = TRACKER_INTERFACE->measure(API, false);
     if (opt.has_value()) {
         auto&& data = opt.value();
@@ -349,7 +378,6 @@ void APILTM::TrackStop()
     ui.signalmeasure->setEnabled(true);
     ui.backbird->setEnabled(true);
     ui.dynamicsmeasure->setEnabled(true);
-    ui.stop->setEnabled(false);
 }
 
 void APILTM::TrackExit()
@@ -385,12 +413,13 @@ void APILTM::coordinatePointMeasure()
         if (opt.has_value()) {
             auto&& data = opt.value();
             auto&& [s, h, v, d, rx, ry, rz, p, px, py, pz, t, hum, press, time] = *data;
+            auto [X, Y, Z] = GetLkXYZR(h, v, d);
 
             // UI更新通过主线程执行
             QMetaObject::invokeMethod(this, [&]() {
-                ui.X->setText(F3(h));
-                ui.Y->setText(F3(v));
-                ui.Z->setText(F3(d));
+                ui.X->setText(F3(X));
+                ui.Y->setText(F3(Y));
+                ui.Z->setText(F3(Z));
                 ui.RMSX->setText(F3(px));
                 ui.RMSY->setText(F3(py));
                 ui.RMSZ->setText(F3(pz));
@@ -409,9 +438,9 @@ void APILTM::coordinatePointMeasure()
                 instrumentTime.toString("yyyy-MM-dd"),
                 instrumentTime.toString("hh:mm:ss")
             };
-
+            qDebug() << "测量值：" << h << v << d << px << py << pz << p;
             // 如果checkbox选中，则保存点坐标
-            bool success = MW::InsertWorkpiecePoint(ui.workpieceName->currentText(), ui.piontname->text(), QString::number(h), QString::number(v), QString::number(d), QString::number(px), QString::number(py), QString::number(pz), QString::number(p), dateTime);
+            bool success = MW::InsertWorkpiecePoint(ui.workpieceName->currentText(), ui.piontname->text(), QString::number(X), QString::number(Y), QString::number(Z), QString::number(px), QString::number(py), QString::number(pz), QString::number(p), dateTime);
             if (success) {
                 TOAST_TIP("点坐标测量成功");
             } else {
