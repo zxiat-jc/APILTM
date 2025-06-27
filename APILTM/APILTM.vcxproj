@@ -136,6 +136,9 @@
     <ProjectReference Include="..\..\Toast\Toast\Toast.vcxproj">
       <Project>{6481e78a-2e78-4e65-b975-b908fd00d9d7}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\TrackerFilter\TrackerFilter\TrackerFilter.vcxproj">
+      <Project>{46e31cbb-10e9-44ea-9001-36fdbf24e834}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\TrackerInterface\TrackerInterface\TrackerInterface.vcxproj">
       <Project>{8992b252-87cc-4b6d-965e-1787d0d0822a}</Project>
     </ProjectReference>

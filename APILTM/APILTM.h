@@ -6,10 +6,17 @@
 #include <cmath>
 #include <tuple>
 
+#include <Eigen/Dense>
+#include <QFile>
+#include <QTextStream>
+
+#include "TrackerFilter.h"
+
 // 定义常量（如果尚未定义）
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
+
 class APILTM : public QWidget {
     Q_OBJECT
 
@@ -20,45 +27,52 @@ public:
 
 private:
     Ui::APILTMClass ui;
+    QString pointName; // 点名称
+    QFile dataFile; // 数据文件对象
+    bool isDynamicMeasuring; // 动态测量状态标志
+    QTextStream dataStream; // 文本流用于写入文件
+    QString dyPointName = "d1"; // 动态测量点名称
+    QString desktopPath; // 添加桌面路径变量
     QString selectedText = "RRR 1.5in"; // 把球类型
     QString sigleMeasureType = "点坐标测量"; // 测量类型
     QString dynamicsMeasureType = "稳定点模式"; // 动态测量方式
-    constexpr static const char* API = "API";
-    constexpr static const char* IP = "192.168.31.237"; // 测量仪器类型
     QString _instrumentType;
-    QString pointName; // 点名称
-
+    constexpr static const char* API = "API";
 public slots:
     /**
      * @brief 连接并初始化跟踪
      *
      */
-    void TrackconnectAndStart();
+    void trackconnectAndStart();
     /**
      * @brief 刷新
      */
-    void TrackRefresh();
+    void trackRefresh();
 
     /**
      * @brief 单点测量
      */
-    void TrackSignalMeasure();
+    void trackSignalMeasure();
+
     /**
      * @brief 动态测量
      */
-    void TrackDynamicsMeasure();
+    void trackDynamicsMeasure();
+
     /**
      * @brief 停止测量
      */
-    void TrackStop();
+    void trackStop();
+
     /**
      * @brief 退出
      */
-    void TrackExit();
+    void trackExit();
+
     /**
      * @brief 回鸟巢
      */
-    void TrackBackBirdNest();
+    void trackBackBirdNest();
     /**
      * @brief 选择类型
      */
@@ -68,6 +82,11 @@ public slots:
      * @param workpiece
      */
     void updateCoordinateSystems(const QString& workpiece);
+
+    /**
+     * @brief 动态测量数据处理
+     */
+    void handleDynamicData(const QString& ip, const QString& name, const QString& type, TrackerFilter::TrackerPoint point);
 
 public:
     /**
@@ -83,11 +102,11 @@ public:
      */
     void listChange();
     /**
-     * @brief 坐标转化
-     * @param x X坐标
-     * @param y Y坐标
-     * @param z Z坐标
-     * @return hvd（高度、垂直度、偏移量）坐标
+     * @brief 坐标系转化
+     * @param name
+     * @param point
+     * @param route
+     * @return
      */
-    std::tuple<double, double, double> xyzToHvd(double x, double y, double z);
+    Eigen::Vector3d coordinateSystemTransform(QString name, Eigen::Vector3d point, Eigen::Vector3d route);
 };
