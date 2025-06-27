@@ -57,7 +57,6 @@ APILTM::APILTM(QWidget* parent)
         ui.backbird->setEnabled(false);
         ui.dynamicsmeasure->setEnabled(false);
         ui.stop->setEnabled(false);
-        ui.lineEdit_4->setEnabled(false);
     }
 
     {
@@ -426,10 +425,12 @@ void APILTM::processCoordinateMeasurement(const QSharedPointer<TrackerPoint>& da
 
     auto [X, Y, Z] = GetLkXYZR(h, v, d);
     Eigen::Vector3d point(X, Y, Z);
-    Eigen::Vector3d route(rx, ry, rz);
-
     // 显示当前坐标系点
-    Eigen::Vector3d rs = coordinateSystemTransform(ui.coordinateSystem->currentText(), point, route);
+    auto&& opt = coordinateSystemTransform(ui.coordinateSystem->currentText(), point);
+    if (!opt.has_value()) {
+        return;
+    }
+    auto&& [result, rs] = opt.value();
 
     // UI更新
     ui.X->setText(F3(rs.x()));
@@ -441,18 +442,6 @@ void APILTM::processCoordinateMeasurement(const QSharedPointer<TrackerPoint>& da
     ui.RMS->setText(F3(p));
     ui.tem->setText(QString::number(t));
     ui.press->setText(QString::number(press));
-
-    // 保存原点坐标系
-    QString stationName = ui.stations->currentText();
-    auto gt = MW::GetStnAxis(stationName);
-    if (!gt.has_value()) {
-        TOAST_TIP("获取测站坐标系失败");
-        return;
-    }
-
-    auto&& axis = gt.value();
-    Eigen::Vector3d origin(axis.getX(), axis.getY(), axis.getZ());
-    Eigen::Vector3d result_0 = Utils::Geometry::Fun::Rotate::RightTransform(point, route, origin);
 
     // 检查点是否存在
     if (MW::CheckPointExist(ui.workpieceName->currentText(), ui.piontname->text())) {
@@ -478,14 +467,14 @@ void APILTM::processCoordinateMeasurement(const QSharedPointer<TrackerPoint>& da
         instrumentTime.toString("yyyy-MM-dd"),
         instrumentTime.toString("hh:mm:ss")
     };
-    qDebug() << result_0.x() << result_0.y() << result_0.z();
+    qDebug() << result.x() << result.y() << result.z();
     // 保存点坐标
     bool success = MW::InsertWorkpiecePoint(
         ui.workpieceName->currentText(),
         ui.piontname->text(),
-        QString::number(result_0.x()),
-        QString::number(result_0.y()),
-        QString::number(result_0.z()),
+        QString::number(result.x()),
+        QString::number(result.y()),
+        QString::number(result.z()),
         QString::number(px),
         QString::number(py),
         QString::number(pz),
@@ -576,62 +565,41 @@ void APILTM::processOrientationMeasurement(const QSharedPointer<TrackerPoint>& d
     }
 }
 
-Eigen::Vector3d APILTM ::coordinateSystemTransform(QString name, Eigen::Vector3d point, Eigen::Vector3d route)
+std::optional<std::pair<Eigen::Vector3d, Eigen::Vector3d>> APILTM ::coordinateSystemTransform(QString name, Eigen::Vector3d point)
 {
-    if (name.contains("测量坐标系")) {
-        QString pointName = ui.stations->currentText();
-        // qDebug() << "测站名称：" << pointName;
-        auto gt = MW::GetStnAxis(ui.stations->currentText());
-        if (!gt.has_value()) {
-            TOAST_TIP("获取测站坐标系失败");
-            return Eigen::Vector3d::Zero();
-        }
-        auto&& axis = gt.value();
-        Eigen::Vector3d origin(axis.getX(), axis.getY(), axis.getZ());
-
-        Eigen::Vector3d result = Utils::Geometry::Fun::Rotate::RightTransform(point, route, origin);
-        return result;
-    } else {
-        // 解析"工件名/坐标系名"格式
-        QStringList parts = name.split('/');
-        if (parts.size() != 2) {
-            TOAST_TIP("坐标系格式错误: " + name);
-            return Eigen::Vector3d(
-                std::numeric_limits<double>::quiet_NaN(),
-                std::numeric_limits<double>::quiet_NaN(),
-                std::numeric_limits<double>::quiet_NaN());
-        }
-
-        QString workpieceName = parts[0];
-        QString sysName = parts[1];
-        // 获取测站坐标系
-        QString pointName = ui.stations->currentText();
-        qDebug() << "测站名称：" << pointName;
-        auto&& gt = MW::GetStnAxis(ui.stations->currentText());
-        if (!gt.has_value()) {
-            TOAST_TIP("获取测站坐标系失败");
-            return Eigen::Vector3d::Zero();
-        }
-        auto&& axis = gt.value();
-
-        Eigen::Vector3d origin(axis.getX(), axis.getY(), axis.getZ());
-
-        Eigen::Vector3d re = Utils::Geometry::Fun::Rotate::RightTransform(point, route, origin);
-        // 转换的子坐标系
-        auto&& ga = MW::GetAxis(ui.workpieceName->currentText(), sysName);
-        if (!ga.has_value()) {
-            TOAST_TIP("获取坐标系失败");
-            return Eigen::Vector3d(
-                std::numeric_limits<double>::quiet_NaN(),
-                std::numeric_limits<double>::quiet_NaN(),
-                std::numeric_limits<double>::quiet_NaN());
-        }
-        auto&& axis2 = ga.value();
-        Eigen::Vector3d origin2(axis2.getX(), axis2.getY(), axis2.getZ());
-        Eigen::Vector3d route2(axis2.getRx(), axis2.getRy(), axis2.getRz());
-        Eigen::Vector3d result = Utils::Geometry::Fun::Rotate::RightReTransform(re, route2, origin2);
-        return result;
+    // 解析"工件名/坐标系名"格式
+    QStringList parts = name.split('/');
+    if (parts.size() != 2) {
+        TOAST_TIP("坐标系格式错误: " + name);
+        return { std::nullopt };
     }
+
+    QString workpieceName = parts[0];
+    QString sysName = parts[1];
+    // 获取测站坐标系
+    QString pointName = ui.stations->currentText();
+    qDebug() << "测站名称：" << pointName;
+    auto&& gt = MW::GetStnAxis(ui.stations->currentText());
+    if (!gt.has_value()) {
+        TOAST_TIP("获取测站坐标系失败");
+        return { std::nullopt };
+    }
+    auto&& axis = gt.value();
+
+    Eigen::Vector3d origin(axis.getX(), axis.getY(), axis.getZ());
+    Eigen::Vector3d route(axis.getRx(), axis.getRy(), axis.getRz());
+    Eigen::Vector3d re = Utils::Geometry::Fun::Rotate::RightTransform(point, route, origin);
+    // 转换的子坐标系
+    auto&& ga = MW::GetAxis(ui.workpieceName->currentText(), sysName);
+    if (!ga.has_value()) {
+        TOAST_TIP("获取坐标系失败");
+        return { std::nullopt };
+    }
+    auto&& axis2 = ga.value();
+    Eigen::Vector3d origin2(axis2.getX(), axis2.getY(), axis2.getZ());
+    Eigen::Vector3d route2(axis2.getRx(), axis2.getRy(), axis2.getRz());
+    Eigen::Vector3d result = Utils::Geometry::Fun::Rotate::RightReTransform(re, route2, origin2);
+    return { { re, result } };
 }
 
 void APILTM::handleDynamicData(const QString& ip, const QString& name, const QString& type, TrackerFilter::TrackerPoint point)
@@ -665,8 +633,8 @@ void APILTM::handleDynamicData(const QString& ip, const QString& name, const QSt
         dataStream.flush();
     }
     // 解析数据点
-    auto&& [s, h, v, d, rx, ry, rz, p, px, py, pz, t, hum, press, time] = point;
-    qDebug() << "动态测量数据hvd：" << h << v << d;
+    auto&& [s, v1, v2, v3, rx, ry, rz, p, px, py, pz, t, hum, press, time] = point;
+    qDebug() << "动态测量数据：" << v1 << v2 << v3;
     dyPointName = Utils::SuffixAddOne(dyPointName);
     // 处理时间戳
     QDateTime timestamp;
@@ -676,59 +644,49 @@ void APILTM::handleDynamicData(const QString& ip, const QString& name, const QSt
     if (!timestamp.isValid()) {
         timestamp = QDateTime::currentDateTime();
     }
+    auto&& [x, y, z] = GetLkXYZR(v1, v2, v3);
+    auto&& opt = coordinateSystemTransform(ui.coordinateSystem->currentText(), { x, y, z });
+    if (opt.has_value()) {
+        auto&& [_, point] = opt.value();
+        x = point.x();
+        y = point.y();
+        z = point.z();
+    }
+    QMetaObject::invokeMethod(this, [this, x, y, z, point]() {
+        auto&& [s, v1, v2, v3, rx, ry, rz, p, px, py, pz, t, hum, press, time] = point;
+        ui.X->setText(F3(x));
+        ui.Y->setText(F3(y));
+        ui.Z->setText(F3(z));
+        ui.RMSX->setText(F3(px));
+        ui.RMSY->setText(F3(py));
+        ui.RMSZ->setText(F3(pz));
+        ui.RMS->setText(F3(p));
+        ui.tem->setText(QString::number(t));
+        ui.press->setText(QString::number(press));
 
-    if (sigleMeasureType == "点坐标测量") {
-        auto [X, Y, Z] = GetLkXYZR(h, v, d);
-        Eigen::Vector3d point(X, Y, Z);
-        Eigen::Vector3d route(rx, ry, rz);
-        Eigen::Vector3d rs = coordinateSystemTransform(ui.coordinateSystem->currentText(), point, route);
-        if (std::isnan(rs.x()) || std::isnan(rs.y()) || std::isnan(rs.z())) {
-            TOAST_TIP("坐标系转换失败");
-            return;
-        }
-        QMetaObject::invokeMethod(this, [&]() {
-            ui.X->setText(F3(rs.x()));
-            ui.Y->setText(F3(rs.y()));
-            ui.Z->setText(F3(rs.z()));
-            ui.RMSX->setText(F3(px));
-            ui.RMSY->setText(F3(py));
-            ui.RMSZ->setText(F3(pz));
-            ui.RMS->setText(F3(p));
-            ui.tem->setText(QString::number(t));
-            ui.press->setText(QString::number(press));
-        });
-        if (ui.savaDyPoint->isChecked()) {
-            // 写入数据到TXT文件 - 使用制表符分隔
-            dataStream << dyPointName << "\t"
-                       << QString::number(rs.x(), 'f', 3) << "\t"
-                       << QString::number(rs.y(), 'f', 3) << "\t"
-                       << QString::number(rs.z(), 'f', 3) << "\t"
-                       << timestamp.toString("yyyy-MM-dd hh:mm:ss.zzz") << "\n";
-            dataStream.flush();
-        }
-    } else if (sigleMeasureType == "定向点测量") {
-        double h_rad = RAD2DEG(h);
-        double v_rad = RAD2DEG(v);
-        double distance = d; // 斜距
-        h_rad = (h_rad < 0) ? h_rad + 360 : h_rad;
-        QMetaObject::invokeMethod(this, [&]() {
-            ui.hz_value->setText(F3(h_rad));
-            ui.v_value->setText(F3(v_rad));
-            ui.dis_value->setText(F3(distance));
-            ui.tem->setText(QString::number(t));
-            ui.press->setText(QString::number(press));
-        });
-        if (ui.savaDyPoint->isChecked()) {
-            // 写入数据到TXT文件 - 使用制表符分隔
-            dataStream << dyPointName << "\t"
-                       << QString::number(h_rad, 'f', 3) << "\t"
-                       << QString::number(v_rad, 'f', 3) << "\t"
-                       << QString::number(distance, 'f', 3) << "\t"
-                       << timestamp.toString("yyyy-MM-dd hh:mm:ss.zzz") << "\n";
-
-            // 刷新缓冲区确保数据写入
-            dataStream.flush();
-        }
+        double h_deg = RAD2DEG(v1);
+        double v_deg = RAD2DEG(v2);
+        h_deg = (h_deg < 0) ? h_deg + 360 : h_deg;
+        ui.hz_value->setText(F3(h_deg));
+        ui.v_value->setText(F3(v_deg));
+        ui.dis_value->setText(F3(v3));
+        ui.tem->setText(QString::number(t));
+        ui.press->setText(QString::number(press));
+    });
+   double wx = x, wy=y, wz=z;
+    if (sigleMeasureType == "定向点测量") {
+        wx = v1;
+        wy = v2;
+        wz = v3;
+    }
+    if (ui.savaDyPoint->isChecked()) {
+        // 写入数据到TXT文件 - 使用制表符分隔
+        dataStream << dyPointName << "\t"
+                   << F4(wx) << "\t"
+                   << F4(wy) << "\t"
+                   << F4(wz) << "\t"
+                   << timestamp.toString("yyyy-MM-dd hh:mm:ss.zzz") << "\n";
+        dataStream.flush();
     }
 }
 

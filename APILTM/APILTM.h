@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <tuple>
+#include <optional>
 
 #include <Eigen/Dense>
 #include <QFile>
@@ -108,7 +109,7 @@ public:
      * @param route
      * @return
      */
-    Eigen::Vector3d coordinateSystemTransform(QString name, Eigen::Vector3d point, Eigen::Vector3d route);
+    std::optional<std::pair<Eigen::Vector3d, Eigen::Vector3d>> coordinateSystemTransform(QString name, Eigen::Vector3d point);
     // 在APILTM类声明中添加
 private:
     void processCoordinateMeasurement(const QSharedPointer<TrackerPoint>& data);
