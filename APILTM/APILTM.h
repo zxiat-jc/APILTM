@@ -11,7 +11,7 @@
 #include <QTextStream>
 
 #include "TrackerFilter.h"
-
+#include "TrackerPoint.h"
 // 定义常量（如果尚未定义）
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -31,7 +31,7 @@ private:
     QFile dataFile; // 数据文件对象
     bool isDynamicMeasuring; // 动态测量状态标志
     QTextStream dataStream; // 文本流用于写入文件
-    QString dyPointName = "d1"; // 动态测量点名称
+    QString dyPointName = "d0"; // 动态测量点名称
     QString desktopPath; // 添加桌面路径变量
     QString selectedText = "RRR 1.5in"; // 把球类型
     QString sigleMeasureType = "点坐标测量"; // 测量类型
@@ -109,4 +109,9 @@ public:
      * @return
      */
     Eigen::Vector3d coordinateSystemTransform(QString name, Eigen::Vector3d point, Eigen::Vector3d route);
+    // 在APILTM类声明中添加
+private:
+    void processCoordinateMeasurement(const QSharedPointer<TrackerPoint>& data);
+
+    void processOrientationMeasurement(const QSharedPointer<TrackerPoint>& data);
 };

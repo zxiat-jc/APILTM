@@ -12,6 +12,7 @@
 #include "QButtonDelegate.h"
 #include "QtUtils.h"
 #include <QButtonGroup>
+#include <QMessageBox>
 #include <QStandardItemModel>
 #include <QTimer>
 
@@ -427,142 +428,218 @@ void APILTM::onSelectInstrumentType(int index)
 void APILTM::coordinatePointMeasure()
 {
     LoadingDialog::ShowLoading(tr("正在测量..."), false, [this]() {
-        // 是否反面测量false
         auto&& opt = TRACKER_INTERFACE->measure(API, false);
         if (opt.has_value()) {
-            auto&& data = opt.value();
-            auto&& [s, h, v, d, rx, ry, rz, p, px, py, pz, t, hum, press, time] = *data;
-            qDebug() << "单点测量数据hvd：" << h << v << d;
-            auto [X, Y, Z] = GetLkXYZR(h, v, d);
-            Eigen::Vector3d point(X, Y, Z);
-            Eigen::Vector3d route(rx, ry, rz);
-            // 显示当前坐标系点
-            Eigen::Vector3d rs = coordinateSystemTransform(ui.coordinateSystem->currentText(), point, route);
-            // qDebug() << "测量点坐标：" << rs.x() << rs.y() << rs.z();
-            // UI更新通过主线程执行
-            QMetaObject::invokeMethod(this, [&]() {
-                ui.X->setText(F3(rs.x()));
-                ui.Y->setText(F3(rs.y()));
-                ui.Z->setText(F3(rs.z()));
-                ui.RMSX->setText(F3(px));
-                ui.RMSY->setText(F3(py));
-                ui.RMSZ->setText(F3(pz));
-                ui.RMS->setText(F3(p));
-                ui.hum->setText(QString::number(hum));
-                ui.press->setText(QString::number(press));
-                pointName = Utils::SuffixAddOne(ui.piontname->text());
-                ui.piontname->setText(pointName);
+            // 将数据处理移到主线程
+            QMetaObject::invokeMethod(this, [this, data = opt.value()]() {
+                processCoordinateMeasurement(data);
             });
-
-            QDateTime instrumentTime = QDateTime::fromString(time, "yyyy-MM-dd hh:mm:ss.zzz");
-            if (!instrumentTime.isValid()) {
-                instrumentTime = QDateTime::currentDateTime();
-            }
-            QPair<QString, QString> dateTime = {
-                instrumentTime.toString("yyyy-MM-dd"),
-                instrumentTime.toString("hh:mm:ss")
-            };
-            // 保存原点坐标系
-            QString pointName = ui.stations->currentText();
-            // qDebug() << "测站名称：" << pointName;
-            auto gt = MW::GetStnAxis(ui.stations->currentText());
-            if (!gt.has_value()) {
-                TOAST_TIP("获取测站坐标系失败");
-                return;
-            }
-            auto&& axis = gt.value();
-            Eigen::Vector3d origin(axis.getX(), axis.getY(), axis.getZ());
-            Eigen::Vector3d result_0 = Utils::Geometry::Fun::Rotate::RightTransform(point, route, origin);
-
-            // 如果checkbox选中，则保存点坐标
-            bool success = MW::InsertWorkpiecePoint(ui.workpieceName->currentText(), ui.piontname->text(), QString::number(result_0.x()), QString::number(result_0.y()), QString::number(result_0.z()), QString::number(px), QString::number(py), QString::number(pz), QString::number(p), dateTime);
-            if (success) {
-                TOAST_TIP("点坐标测量成功");
-            } else {
-                TOAST_TIP("保存失败");
-            }
         } else {
-            TOAST_TIP("测量失败");
+            QMetaObject::invokeMethod(this, "showToast", Qt::QueuedConnection,
+                Q_ARG(QString, "测量失败"));
         }
     });
+}
+
+void APILTM::processCoordinateMeasurement(const QSharedPointer<TrackerPoint>& data)
+{
+    auto&& [s, h, v, d, rx, ry, rz, p, px, py, pz, t, hum, press, time] = *data;
+
+    auto [X, Y, Z] = GetLkXYZR(h, v, d);
+    Eigen::Vector3d point(X, Y, Z);
+    Eigen::Vector3d route(rx, ry, rz);
+
+    // 显示当前坐标系点
+    Eigen::Vector3d rs = coordinateSystemTransform(ui.coordinateSystem->currentText(), point, route);
+
+    // UI更新
+    ui.X->setText(F3(rs.x()));
+    ui.Y->setText(F3(rs.y()));
+    ui.Z->setText(F3(rs.z()));
+    ui.RMSX->setText(F3(px));
+    ui.RMSY->setText(F3(py));
+    ui.RMSZ->setText(F3(pz));
+    ui.RMS->setText(F3(p));
+    ui.tem->setText(QString::number(t));
+    ui.press->setText(QString::number(press));
+
+    // 保存原点坐标系
+    QString stationName = ui.stations->currentText();
+    auto gt = MW::GetStnAxis(stationName);
+    if (!gt.has_value()) {
+        TOAST_TIP("获取测站坐标系失败");
+        return;
+    }
+
+    auto&& axis = gt.value();
+    Eigen::Vector3d origin(axis.getX(), axis.getY(), axis.getZ());
+    Eigen::Vector3d result_0 = Utils::Geometry::Fun::Rotate::RightTransform(point, route, origin);
+
+    // 检查点是否存在
+    if (MW::CheckPointExist(ui.workpieceName->currentText(), ui.piontname->text())) {
+        QMessageBox::StandardButton reply;
+        reply = QMessageBox::question(this, "点已存在", "该点已存在，是否覆盖？",
+            QMessageBox::Yes | QMessageBox::No);
+        if (reply == QMessageBox::No) {
+            TOAST_TIP("操作已取消");
+
+            return;
+        } else {
+            MW::DeletePoint(ui.workpieceName->currentText(), ui.piontname->text());
+        }
+    }
+
+    // 时间处理
+    QDateTime instrumentTime = QDateTime::fromString(time, "yyyy-MM-dd hh:mm:ss.zzz");
+    if (!instrumentTime.isValid()) {
+        instrumentTime = QDateTime::currentDateTime();
+    }
+
+    QPair<QString, QString> dateTime = {
+        instrumentTime.toString("yyyy-MM-dd"),
+        instrumentTime.toString("hh:mm:ss")
+    };
+
+    // 保存点坐标
+    bool success = MW::InsertWorkpiecePoint(
+        ui.workpieceName->currentText(),
+        ui.piontname->text(),
+        QString::number(result_0.x()),
+        QString::number(result_0.y()),
+        QString::number(result_0.z()),
+        QString::number(px),
+        QString::number(py),
+        QString::number(pz),
+        QString::number(p),
+        dateTime);
+
+    if (success) {
+        // 更新点名
+        pointName = Utils::SuffixAddOne(ui.piontname->text());
+        ui.piontname->setText(pointName);
+        TOAST_TIP("点坐标测量成功");
+    } else {
+        TOAST_TIP("保存失败");
+    }
 }
 
 void APILTM::orientationPiontMeasure()
 {
     LoadingDialog::ShowLoading(tr("正在测量..."), false, [this]() {
-        // 是否反面测量false
         auto&& opt = TRACKER_INTERFACE->measure(API, false);
         if (opt.has_value()) {
-            auto&& data = opt.value();
-            auto&& [s, h, v, d, rx, ry, rz, p, px, py, pz, t, hum, press, time] = *data;
-            qDebug() << "定向点测量数据hvd：" << h << v << d;
-            // UI更新通过主线程执行
-            QMetaObject::invokeMethod(this, [&]() {
-                ui.hum->setText(QString::number(hum));
-                ui.press->setText(QString::number(press));
-                pointName = Utils::SuffixAddOne(ui.piontname->text());
-                ui.piontname->setText(pointName);
+            QMetaObject::invokeMethod(this, [this, data = opt.value()]() {
+                processOrientationMeasurement(data);
             });
-
-            QDateTime instrumentTime = QDateTime::fromString(time, "yyyy-MM-dd hh:mm:ss.zzz");
-            if (!instrumentTime.isValid()) {
-                instrumentTime = QDateTime::currentDateTime();
-            }
-            QPair<QString, QString> dateTime = {
-                instrumentTime.toString("yyyy-MM-dd"),
-                instrumentTime.toString("hh:mm:ss")
-            };
-            // 弧度转角度显示
-            double h_rad = RAD2DEG(h);
-            double v_rad = RAD2DEG(v);
-            double distance = d; // 斜距
-            QMetaObject::invokeMethod(this, [&]() {
-                ui.hz_value->setText(F3(h_rad));
-                ui.v_value->setText(F3(v_rad));
-                ui.dis_value->setText(F3(distance));
-            });
-            // 存入观测值（弧度）
-            bool success = MW::InsertObservation(ui.workpieceName->currentText(), ui.piontname->text(), ui.stations->currentText(), h, v, d, dateTime, hum, press);
-            if (success) {
-                TOAST_TIP("定向点保存成功");
-            } else {
-                TOAST_TIP("定向点保存失败");
-            }
         } else {
-            TOAST_TIP("测量失败");
+            QMetaObject::invokeMethod(this, "showToast", Qt::QueuedConnection,
+                Q_ARG(QString, "测量失败"));
         }
     });
 }
 
+void APILTM::processOrientationMeasurement(const QSharedPointer<TrackerPoint>& data)
+{
+    auto&& [s, h, v, d, rx, ry, rz, p, px, py, pz, t, hum, press, time] = *data;
+
+    // UI更新
+    ui.tem->setText(QString::number(t));
+    ui.press->setText(QString::number(press));
+    // 弧度转角度显示
+    double h_rad = RAD2DEG(h);
+    double v_rad = RAD2DEG(v);
+    double distance = d;
+    h_rad = (h_rad < 0) ? h_rad + 360 : h_rad;
+
+    ui.hz_value->setText(F3(h_rad));
+    ui.v_value->setText(F3(v_rad));
+    ui.dis_value->setText(F3(distance));
+
+    // 时间处理
+    QDateTime instrumentTime = QDateTime::fromString(time, "yyyy-MM-dd hh:mm:ss.zzz");
+    if (!instrumentTime.isValid()) {
+        instrumentTime = QDateTime::currentDateTime();
+    }
+
+    QPair<QString, QString> dateTime = {
+        instrumentTime.toString("yyyy-MM-dd"),
+        instrumentTime.toString("hh:mm:ss")
+    };
+
+    // 检查点是否存在
+    if (MW::CheckPointExist(ui.workpieceName->currentText(), ui.piontname->text())) {
+        QMessageBox::StandardButton reply;
+        reply = QMessageBox::question(this, "点已存在", "该点已存在，是否覆盖？",
+            QMessageBox::Yes | QMessageBox::No);
+
+        if (reply == QMessageBox::No) {
+            TOAST_TIP("操作已取消");
+            return;
+        } else {
+            MW::DeleteObservation(ui.workpieceName->currentText(), ui.piontname->text(), ui.stations->currentText());
+        }
+    }
+
+    // 存入观测值（弧度）
+    bool success = MW::InsertObservation(
+        ui.workpieceName->currentText(),
+        ui.piontname->text(),
+        ui.stations->currentText(),
+        h, v, d,
+        dateTime, t, press);
+    if (success) {
+        TOAST_TIP("定向点保存成功");
+        pointName = Utils::SuffixAddOne(ui.piontname->text());
+        ui.piontname->setText(pointName);
+    } else {
+        TOAST_TIP("定向点保存失败");
+        return;
+    }
+}
+
 Eigen::Vector3d APILTM ::coordinateSystemTransform(QString name, Eigen::Vector3d point, Eigen::Vector3d route)
 {
+    if (name == "测量坐标系") {
+        QString pointName = ui.stations->currentText();
+        // qDebug() << "测站名称：" << pointName;
+        auto gt = MW::GetStnAxis(ui.stations->currentText());
+        if (!gt.has_value()) {
+            TOAST_TIP("获取测站坐标系失败");
+            return Eigen::Vector3d::Zero();
+        }
+        auto&& axis = gt.value();
+        Eigen::Vector3d origin(axis.getX(), axis.getY(), axis.getZ());
 
-    QString pointName = ui.stations->currentText();
-    qDebug() << "测站名称：" << pointName;
-    auto&& gt = MW::GetStnAxis(ui.stations->currentText());
-    if (!gt.has_value()) {
-        TOAST_TIP("获取测站坐标系失败");
-        return Eigen::Vector3d::Zero();
+        Eigen::Vector3d result = Utils::Geometry::Fun::Rotate::RightTransform(point, route, origin);
+        return result;
+    } else {
+        QString pointName = ui.stations->currentText();
+        qDebug() << "测站名称：" << pointName;
+        auto&& gt = MW::GetStnAxis(ui.stations->currentText());
+        if (!gt.has_value()) {
+            TOAST_TIP("获取测站坐标系失败");
+            return Eigen::Vector3d::Zero();
+        }
+        auto&& axis = gt.value();
+
+        Eigen::Vector3d origin(axis.getX(), axis.getY(), axis.getZ());
+
+        Eigen::Vector3d re = Utils::Geometry::Fun::Rotate::RightTransform(point, route, origin);
+        // 转换的子坐标系
+        auto&& ga = MW::GetAxis(ui.workpieceName->currentText(), name);
+        if (!ga.has_value()) {
+            TOAST_TIP("获取坐标系失败");
+            return Eigen::Vector3d(
+                std::numeric_limits<double>::quiet_NaN(),
+                std::numeric_limits<double>::quiet_NaN(),
+                std::numeric_limits<double>::quiet_NaN());
+        }
+        auto&& axis2 = ga.value();
+        Eigen::Vector3d origin2(axis2.getX(), axis2.getY(), axis2.getZ());
+        Eigen::Vector3d route2(axis2.getRx(), axis2.getRy(), axis2.getRz());
+        Eigen::Vector3d result = Utils::Geometry::Fun::Rotate::RightReTransform(re, route2, origin2);
+        return result;
     }
-    auto&& axis = gt.value();
-
-    Eigen::Vector3d origin(axis.getX(), axis.getY(), axis.getZ());
-
-    Eigen::Vector3d re = Utils::Geometry::Fun::Rotate::RightTransform(point, route, origin);
-    // 转换的子坐标系
-    auto&& ga = MW::GetAxis(ui.workpieceName->currentText(), name);
-    if (!ga.has_value()) {
-        TOAST_TIP("获取坐标系失败");
-        return Eigen::Vector3d(
-            std::numeric_limits<double>::quiet_NaN(),
-            std::numeric_limits<double>::quiet_NaN(),
-            std::numeric_limits<double>::quiet_NaN());
-    }
-    auto&& axis2 = ga.value();
-    Eigen::Vector3d origin2(axis2.getX(), axis2.getY(), axis2.getZ());
-    Eigen::Vector3d route2(axis2.getRx(), axis2.getRy(), axis2.getRz());
-    Eigen::Vector3d result = Utils::Geometry::Fun::Rotate::RightReTransform(re, route2, origin2);
-    return result;
 }
 
 void APILTM::handleDynamicData(const QString& ip, const QString& name, const QString& type, TrackerFilter::TrackerPoint point)
@@ -625,7 +702,7 @@ void APILTM::handleDynamicData(const QString& ip, const QString& name, const QSt
             ui.RMSY->setText(F3(py));
             ui.RMSZ->setText(F3(pz));
             ui.RMS->setText(F3(p));
-            ui.hum->setText(QString::number(hum));
+            ui.tem->setText(QString::number(t));
             ui.press->setText(QString::number(press));
         });
         if (ui.savaDyPoint->isChecked()) {
@@ -641,10 +718,13 @@ void APILTM::handleDynamicData(const QString& ip, const QString& name, const QSt
         double h_rad = RAD2DEG(h);
         double v_rad = RAD2DEG(v);
         double distance = d; // 斜距
+        h_rad = (h_rad < 0) ? h_rad + 360 : h_rad;
         QMetaObject::invokeMethod(this, [&]() {
             ui.hz_value->setText(F3(h_rad));
             ui.v_value->setText(F3(v_rad));
             ui.dis_value->setText(F3(distance));
+            ui.tem->setText(QString::number(t));
+            ui.press->setText(QString::number(press));
         });
         if (ui.savaDyPoint->isChecked()) {
             // 写入数据到TXT文件 - 使用制表符分隔
@@ -682,57 +762,4 @@ void APILTM::updateCoordinateSystems(const QString& workpiece)
     } else {
         TOAST_TIP("获取坐标系失败");
     }
-}
-
-std::tuple<double, double, double> APILTM::xyzToHvd(double x, double y, double z)
-{
-    // 处理零坐标情况
-    if (x == 0.0 && y == 0.0 && z == 0.0) {
-        return { 0.0, 0.0, 0.0 };
-    }
-
-    double hd = std::sqrt(x * x + y * y);
-    double v = 0.0;
-
-    // 处理垂直角计算中的除零问题
-    if (hd == 0 && z == 0) {
-        v = 0.0;
-    } else {
-        v = std::atan2(hd, z); // 使用atan2避免除零错误
-    }
-
-    double h = 0.0;
-
-    // 计算水平角
-    if (x == 0.0) {
-        if (y >= 0) {
-            h = 3 * M_PI / 2;
-        } else {
-            h = M_PI / 2;
-        }
-    } else {
-        if (x > 0) {
-            if (y > 0) {
-                h = 2 * M_PI - std::atan(y / x);
-            } else {
-                h = std::atan(-y / x);
-            }
-        } else {
-            if (y > 0) {
-                h = M_PI + std::atan(-y / x);
-            } else {
-                h = M_PI - std::atan(y / x);
-            }
-        }
-    }
-
-    // 将水平角调整到[-π, π]范围内
-    if (h > M_PI) {
-        h -= 2 * M_PI;
-    } else if (h < -M_PI) {
-        h += 2 * M_PI;
-    }
-
-    double d = std::sqrt(x * x + y * y + z * z);
-    return { h, v, d };
 }
