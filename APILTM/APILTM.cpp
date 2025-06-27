@@ -567,7 +567,7 @@ void APILTM::processOrientationMeasurement(const QSharedPointer<TrackerPoint>& d
     };
 
     // 检查点是否存在
-    if (MW::CheckPointExist(ui.workpieceName->currentText(), ui.piontname->text())) {
+    if (MW::CheckObservationExist(ui.workpieceName->currentText(), ui.piontname->text(), ui.stations->currentText())) {
         QMessageBox::StandardButton reply;
         reply = QMessageBox::question(this, "点已存在", "该点已存在，是否覆盖？",
             QMessageBox::Yes | QMessageBox::No);
