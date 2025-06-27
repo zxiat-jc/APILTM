@@ -205,38 +205,17 @@ void APILTM::init()
         for (const auto& item : arr) {
             QJsonObject obj = item.toObject();
             QString name = obj["工件名"].toString();
+            updateCoordinateSystems(name);
             ui.workpieceName->addItem(name);
         }
     } else {
         TOAST_TIP("获取工件失败");
     }
-    // 如果有工件，获取第一个工件的坐标系
-    if (ui.workpieceName->count() > 0) {
-        QString firstWorkpiece = ui.workpieceName->itemText(0);
-        auto coordinateSystems = MW::GetWorkpiecesAxis(firstWorkpiece);
-        if (coordinateSystems.has_value()) {
-            ui.coordinateSystem->clear();
-            for (const auto& system : coordinateSystems.value()) {
-                QJsonObject obj = system.toObject();
-                QString sysName = obj["name"].toString();
-                ui.coordinateSystem->addItem(sysName);
-            }
-        } else {
-            TOAST_TIP("获取坐标系失败");
-        }
-    }
 }
 
 void APILTM::listChange()
 {
-    // 连接信号槽：当工件选择变化时更新坐标系
-    connect(ui.workpieceName, QOverload<int>::of(&QComboBox::currentIndexChanged),
-        this, [this](int index) {
-            if (index >= 0) {
-                QString workpiece = ui.workpieceName->itemText(index);
-                updateCoordinateSystems(workpiece);
-            }
-        });
+
     // 连接信号槽：仪器类型选择变化
     connect(ui.instrumentType, &QComboBox::currentTextChanged, this,
         [this](const QString& text) {
@@ -499,7 +478,7 @@ void APILTM::processCoordinateMeasurement(const QSharedPointer<TrackerPoint>& da
         instrumentTime.toString("yyyy-MM-dd"),
         instrumentTime.toString("hh:mm:ss")
     };
-
+    qDebug() << result_0.x() << result_0.y() << result_0.z();
     // 保存点坐标
     bool success = MW::InsertWorkpiecePoint(
         ui.workpieceName->currentText(),
@@ -599,7 +578,7 @@ void APILTM::processOrientationMeasurement(const QSharedPointer<TrackerPoint>& d
 
 Eigen::Vector3d APILTM ::coordinateSystemTransform(QString name, Eigen::Vector3d point, Eigen::Vector3d route)
 {
-    if (name == "测量坐标系") {
+    if (name.contains("测量坐标系")) {
         QString pointName = ui.stations->currentText();
         // qDebug() << "测站名称：" << pointName;
         auto gt = MW::GetStnAxis(ui.stations->currentText());
@@ -613,6 +592,19 @@ Eigen::Vector3d APILTM ::coordinateSystemTransform(QString name, Eigen::Vector3d
         Eigen::Vector3d result = Utils::Geometry::Fun::Rotate::RightTransform(point, route, origin);
         return result;
     } else {
+        // 解析"工件名/坐标系名"格式
+        QStringList parts = name.split('/');
+        if (parts.size() != 2) {
+            TOAST_TIP("坐标系格式错误: " + name);
+            return Eigen::Vector3d(
+                std::numeric_limits<double>::quiet_NaN(),
+                std::numeric_limits<double>::quiet_NaN(),
+                std::numeric_limits<double>::quiet_NaN());
+        }
+
+        QString workpieceName = parts[0];
+        QString sysName = parts[1];
+        // 获取测站坐标系
         QString pointName = ui.stations->currentText();
         qDebug() << "测站名称：" << pointName;
         auto&& gt = MW::GetStnAxis(ui.stations->currentText());
@@ -626,7 +618,7 @@ Eigen::Vector3d APILTM ::coordinateSystemTransform(QString name, Eigen::Vector3d
 
         Eigen::Vector3d re = Utils::Geometry::Fun::Rotate::RightTransform(point, route, origin);
         // 转换的子坐标系
-        auto&& ga = MW::GetAxis(ui.workpieceName->currentText(), name);
+        auto&& ga = MW::GetAxis(ui.workpieceName->currentText(), sysName);
         if (!ga.has_value()) {
             TOAST_TIP("获取坐标系失败");
             return Eigen::Vector3d(
@@ -742,22 +734,15 @@ void APILTM::handleDynamicData(const QString& ip, const QString& name, const QSt
 
 void APILTM::updateCoordinateSystems(const QString& workpiece)
 {
-    if (workpiece.isEmpty()) {
-        ui.coordinateSystem->clear();
-        return;
-    }
-
     auto coordinateSystems = MW::GetWorkpiecesAxis(workpiece);
-    ui.coordinateSystem->clear();
 
     if (coordinateSystems.has_value()) {
         for (const auto& system : coordinateSystems.value()) {
             QJsonObject obj = system.toObject();
             qDebug() << obj;
-            QString sysName = obj["name"].toString();
-            if (!sysName.isEmpty()) {
-                ui.coordinateSystem->addItem(sysName);
-            }
+            QString sysName = workpiece + "/" + obj["name"].toString();
+            qDebug() << "坐标系名称：" << sysName;
+            ui.coordinateSystem->addItem(sysName);
         }
     } else {
         TOAST_TIP("获取坐标系失败");
