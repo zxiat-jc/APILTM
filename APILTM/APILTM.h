@@ -4,11 +4,15 @@
 #include <QtWidgets/QWidget>
 
 #include <cmath>
-#include <tuple>
 #include <optional>
+#include <tuple>
 
 #include <Eigen/Dense>
+#include <QElapsedTimer>
 #include <QFile>
+#include <QMutex>
+#include <QQueue>
+#include <QSharedPointer>
 #include <QTextStream>
 
 #include "TrackerFilter.h"
@@ -39,6 +43,8 @@ private:
     QString dynamicsMeasureType = "稳定点模式"; // 动态测量方式
     QString _instrumentType;
     constexpr static const char* API = "API";
+
+    QStringList dynamicDataList; // 用于存储动态测量数据
 public slots:
     /**
      * @brief 连接并初始化跟踪
@@ -110,7 +116,7 @@ public:
      * @return
      */
     std::optional<std::pair<Eigen::Vector3d, Eigen::Vector3d>> coordinateSystemTransform(QString name, Eigen::Vector3d point);
-    // 在APILTM类声明中添加
+
 private:
     void processCoordinateMeasurement(const QSharedPointer<TrackerPoint>& data);
 

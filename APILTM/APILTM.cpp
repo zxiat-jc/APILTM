@@ -26,7 +26,7 @@ APILTM::APILTM(QWidget* parent)
     QPixmap red(":/res/p1.png");
     // 设置图片大小
     red = red.scaled(54, 41);
-    ui.lab_tupian->setPixmap(red);
+    ui.picture->setPixmap(red);
     // 设置stations可编辑
     ui.stations->setEditable(true);
 
@@ -44,6 +44,7 @@ APILTM::APILTM(QWidget* parent)
     hideAndRetain(ui.label_14);
     // 获取桌面路径
     desktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+
     {
         connect(ui.startapi, &QPushButton::clicked, this, &APILTM::trackconnectAndStart);
         connect(ui.refresh, &QPushButton::clicked, this, &APILTM::trackRefresh);
@@ -53,10 +54,6 @@ APILTM::APILTM(QWidget* parent)
         connect(ui.exit, &QPushButton::clicked, this, &APILTM::trackExit);
         connect(ui.backbird, &QPushButton::clicked, this, &APILTM::trackBackBirdNest);
         QObject::connect(ui.instrumentType, &QComboBox::currentIndexChanged, this, &APILTM::onSelectInstrumentType);
-        ui.signalmeasure->setEnabled(false);
-        ui.backbird->setEnabled(false);
-        ui.dynamicsmeasure->setEnabled(false);
-        ui.stop->setEnabled(false);
     }
 
     {
@@ -130,7 +127,7 @@ APILTM::APILTM(QWidget* parent)
             // 测量准备就绪
             QPixmap pix(":/res/p4.png");
             pix = pix.scaled(54, 41);
-            ui.lab_tupian->setPixmap(pix);
+            ui.picture->setPixmap(pix);
             ui.signalmeasure->setEnabled(true);
             ui.backbird->setEnabled(true);
             ui.dynamicsmeasure->setEnabled(true);
@@ -139,7 +136,7 @@ APILTM::APILTM(QWidget* parent)
             // 测量进行中
             QPixmap pix(":/res/p2.png");
             pix = pix.scaled(54, 41);
-            ui.lab_tupian->setPixmap(pix);
+            ui.picture->setPixmap(pix);
             ui.signalmeasure->setEnabled(false);
             ui.backbird->setEnabled(false);
             ui.dynamicsmeasure->setEnabled(false);
@@ -148,7 +145,7 @@ APILTM::APILTM(QWidget* parent)
             // 测量未就绪或无效状态
             QPixmap pix(":/res/p1.png");
             pix = pix.scaled(54, 41);
-            ui.lab_tupian->setPixmap(pix);
+            ui.picture->setPixmap(pix);
             ui.signalmeasure->setEnabled(false);
             ui.backbird->setEnabled(false);
             ui.dynamicsmeasure->setEnabled(false);
@@ -274,20 +271,8 @@ void APILTM::trackconnectAndStart()
         if (TRACKER_INTERFACE->connect(API)) {
             if (TRACKER_INTERFACE->init(API)) {
                 TOAST_TIP("初始化成功");
-                QPixmap pix(":/res/p4.png");
-                pix = pix.scaled(54, 41);
-                ui.lab_tupian->setPixmap(pix);
-                QTimer::singleShot(1000, this, [this]() {
-                    ui.signalmeasure->setEnabled(true);
-                    ui.backbird->setEnabled(true);
-                    ui.dynamicsmeasure->setEnabled(true);
-                    ui.stop->setEnabled(true);
-                });
             } else {
                 TOAST_TIP("初始化失败");
-                QPixmap pix(":/res/p1.png");
-                pix = pix.scaled(54, 41);
-                ui.lab_tupian->setPixmap(pix);
             }
         } else {
             TOAST_TIP("连接失败");
@@ -307,14 +292,8 @@ void APILTM::trackRefresh()
     bool co = TRACKER_INTERFACE->connect(API);
     if (re && ad && co) {
         TOAST_TIP("刷新成功");
-        QPixmap pix(":/res/p4.png");
-        pix = pix.scaled(54, 41);
-        ui.lab_tupian->setPixmap(pix);
     } else {
         TOAST_TIP("刷新失败");
-        QPixmap pix(":/res/p1.png");
-        pix = pix.scaled(54, 41);
-        ui.lab_tupian->setPixmap(pix);
     }
 }
 
@@ -366,10 +345,39 @@ void APILTM::trackStop()
 
     TRACKER_INTERFACE->stop();
     // 关闭文件
-    if (dataFile.isOpen()) {
-        QString filePath = dataFile.fileName();
-        dataFile.close();
-        TOAST_TIP("动态数据已保存至桌面");
+    if (ui.savaDyPoint->isChecked() && !dynamicDataList.isEmpty()) {
+        QString fileName = QString("%1_%2_dynamic.txt")
+                               .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss"))
+                               .arg(reinterpret_cast<quintptr>(this));
+        QString fullPath = QDir(desktopPath).filePath(fileName);
+
+        QFile file(fullPath);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream stream(&file);
+
+            // 写入表头
+            if (sigleMeasureType == "点坐标测量") {
+                stream << "\t\t\t\t\t\t动态测量数据记录\n";
+                stream << "点号\tX(mm)\tY(mm)\tZ(mm)\t时间\n";
+            } else if (sigleMeasureType == "定向点测量") {
+                stream << "\t\t\t\t\t\t动态测量数据记录\n";
+                stream << "点号\t水平角(弧度)\t垂直角(弧度)\t斜距(m)\t时间\n";
+            }
+            stream << "----------------------------------------\n";
+
+            // 写入所有数据
+            foreach (const QString& line, dynamicDataList) {
+                stream << line;
+            }
+
+            file.close();
+            TOAST_TIP(QString("动态数据已保存至桌面，共%1条记录").arg(dynamicDataList.count()));
+        } else {
+            TOAST_TIP("无法创建数据文件: " + fullPath);
+        }
+
+        // 清空数据列表
+        dynamicDataList.clear();
     }
     isDynamicMeasuring = false;
     TOAST_TIP("停止测量成功");
@@ -442,6 +450,13 @@ void APILTM::processCoordinateMeasurement(const QSharedPointer<TrackerPoint>& da
     ui.RMS->setText(F3(p));
     ui.tem->setText(QString::number(t));
     ui.press->setText(QString::number(press));
+    // 弧度转角度显示
+    double h_deg = RAD2DEG(h);
+    double v_deg = RAD2DEG(v);
+    h_deg = (h_deg < 0) ? h_deg + 360 : h_deg;
+    ui.hz_value->setText(F3(h_deg));
+    ui.v_value->setText(F3(v_deg));
+    ui.dis_value->setText(F3(d));
 
     // 检查点是否存在
     if (MW::CheckPointExist(ui.workpieceName->currentText(), ui.piontname->text())) {
@@ -509,18 +524,36 @@ void APILTM::orientationPiontMeasure()
 void APILTM::processOrientationMeasurement(const QSharedPointer<TrackerPoint>& data)
 {
     auto&& [s, h, v, d, rx, ry, rz, p, px, py, pz, t, hum, press, time] = *data;
+    {
+        auto [X, Y, Z] = GetLkXYZR(h, v, d);
+        Eigen::Vector3d point(X, Y, Z);
+        // 显示当前坐标系点
+        auto&& opt = coordinateSystemTransform(ui.coordinateSystem->currentText(), point);
+        if (!opt.has_value()) {
+            return;
+        }
+        auto&& [result, rs] = opt.value();
 
-    // UI更新
-    ui.tem->setText(QString::number(t));
-    ui.press->setText(QString::number(press));
-    // 弧度转角度显示
-    double h_rad = RAD2DEG(h);
-    double v_rad = RAD2DEG(v);
+        // UI更新
+        ui.X->setText(F3(rs.x()));
+        ui.Y->setText(F3(rs.y()));
+        ui.Z->setText(F3(rs.z()));
+        ui.RMSX->setText(F3(px));
+        ui.RMSY->setText(F3(py));
+        ui.RMSZ->setText(F3(pz));
+        ui.RMS->setText(F3(p));
+        // UI更新
+        ui.tem->setText(QString::number(t));
+        ui.press->setText(QString::number(press));
+    }
+
+    // 角度转角度显示
+    double h_deg = RAD2DEG(h);
+    double v_deg = RAD2DEG(v);
     double distance = d;
-    h_rad = (h_rad < 0) ? h_rad + 360 : h_rad;
-
-    ui.hz_value->setText(F3(h_rad));
-    ui.v_value->setText(F3(v_rad));
+    h_deg = (h_deg < 0) ? h_deg + 360 : h_deg;
+    ui.hz_value->setText(F3(h_deg));
+    ui.v_value->setText(F3(v_deg));
     ui.dis_value->setText(F3(distance));
 
     // 时间处理
@@ -604,34 +637,9 @@ std::optional<std::pair<Eigen::Vector3d, Eigen::Vector3d>> APILTM ::coordinateSy
 
 void APILTM::handleDynamicData(const QString& ip, const QString& name, const QString& type, TrackerFilter::TrackerPoint point)
 {
+
     if (!isDynamicMeasuring)
         return;
-
-    // 创建文件
-    if (ui.savaDyPoint->isChecked() && !dataFile.isOpen()) {
-        QString fileName = QString("%1_%2_dynamic.txt")
-                               .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss"))
-                               .arg(reinterpret_cast<quintptr>(this));
-        QString fullPath = QDir(desktopPath).filePath(fileName);
-
-        dataFile.setFileName(fullPath);
-        if (!dataFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            TOAST_TIP("无法创建数据文件: " + fullPath);
-            return;
-        }
-
-        dataStream.setDevice(&dataFile);
-        // 写入表头
-        if (sigleMeasureType == "点坐标测量") {
-            dataStream << "\t\t\t\t\t\t动态测量数据记录\n";
-            dataStream << "点号\tX(mm)\tY(mm)\tZ(mm)\t时间\n";
-        } else if (sigleMeasureType == "定向点测量") {
-            dataStream << "\t\t\t\t\t\t动态测量数据记录\n";
-            dataStream << "点号\t水平角(°)\t垂直角(°)\t斜距(m)\t时间\n";
-        }
-        dataStream << "----------------------------------------\n";
-        dataStream.flush();
-    }
     // 解析数据点
     auto&& [s, v1, v2, v3, rx, ry, rz, p, px, py, pz, t, hum, press, time] = point;
     qDebug() << "动态测量数据：" << v1 << v2 << v3;
@@ -673,20 +681,20 @@ void APILTM::handleDynamicData(const QString& ip, const QString& name, const QSt
         ui.tem->setText(QString::number(t));
         ui.press->setText(QString::number(press));
     });
-   double wx = x, wy=y, wz=z;
+    double wx = x, wy = y, wz = z;
     if (sigleMeasureType == "定向点测量") {
         wx = v1;
         wy = v2;
         wz = v3;
     }
     if (ui.savaDyPoint->isChecked()) {
-        // 写入数据到TXT文件 - 使用制表符分隔
-        dataStream << dyPointName << "\t"
-                   << F4(wx) << "\t"
-                   << F4(wy) << "\t"
-                   << F4(wz) << "\t"
-                   << timestamp.toString("yyyy-MM-dd hh:mm:ss.zzz") << "\n";
-        dataStream.flush();
+        //   将数据存入内存列表
+        dynamicDataList.append(QString("%1\t%2\t%3\t%4\t%5\n")
+                                   .arg(dyPointName)
+                                   .arg(F4(wx))
+                                   .arg(F4(wy))
+                                   .arg(F4(wz))
+                                   .arg(timestamp.toString("yyyy-MM-dd hh:mm:ss.zzz")));
     }
 }
 
