@@ -164,7 +164,6 @@ APILTM::~APILTM()
         TRACKER_INTERFACE->disconnect(API);
         TRACKER_INTERFACE->remove(API);
     }
-    trackStop();
 }
 
 void APILTM::init()
@@ -361,7 +360,13 @@ void APILTM::trackDynamicsMeasure()
 void APILTM::trackStop()
 {
     uiUpdateTimer->stop();
-    TRACKER_INTERFACE->stop();
+
+    // 判断是否正在动态测量
+
+    // 添加空指针检查
+    if (TRACKER_INTERFACE && TRACKER_INTERFACE->contains(API)) {
+        TRACKER_INTERFACE->stop();
+    }
     // 关闭文件
     if (ui.savaDyPoint->isChecked() && !dynamicDataList.isEmpty()) {
         // 对数据进行排序（按点名）

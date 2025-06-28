@@ -98,6 +98,10 @@ public slots:
      * @brief 动态测量数据处理
      */
     void handleDynamicData(const QString& ip, const QString& name, const QString& type, TrackerFilter::TrackerPoint point);
+    /**
+     * @brief 更新动态UI
+     */
+    void updateUI();
 
 public:
     /**
@@ -120,6 +124,8 @@ public:
      * @return
      */
     std::optional<std::pair<Eigen::Vector3d, Eigen::Vector3d>> coordinateSystemTransform(QString name, Eigen::Vector3d point);
+
+private:
     /**
      * @brief 点坐标测量处理函数
      * @param data
@@ -130,8 +136,4 @@ public:
      * @param data
      */
     void processOrientationMeasurement(const QSharedPointer<TrackerPoint>& data);
-    /**
-     * @brief 更新动态UI
-     */
-    void updateUI();
 };
