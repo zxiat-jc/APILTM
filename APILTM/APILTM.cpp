@@ -15,6 +15,7 @@
 #include <QMessageBox>
 #include <QStandardItemModel>
 #include <QTimer>
+#include <QtConcurrent>
 
 APILTM::APILTM(QWidget* parent)
     : QWidget(parent)
@@ -317,6 +318,15 @@ void APILTM::trackSignalMeasure()
 
 void APILTM::trackDynamicsMeasure()
 {
+    // 重置点名计数器
+    {
+        QMutexLocker locker(&dataMutex);
+        dyPointName = "d0"; // 重置为初始值
+    }
+    // 初始化UI更新定时器
+    uiUpdateTimer = new QTimer(this);
+    uiUpdateTimer->setInterval(200); // 200ms更新一次
+    connect(uiUpdateTimer, &QTimer::timeout, this, &APILTM::updateUI);
     // 初始化按钮组
     if (dynamicsMeasureType == "时间间隔模式") {
         TRACKER_INTERFACE->setProfileTime(API, ui.time_ms->text().toDouble());
@@ -326,8 +336,16 @@ void APILTM::trackDynamicsMeasure()
         TRACKER_INTERFACE->setProfile(API, CONTINUOUS_DISTANCE);
     }
 
+    // 清空数据
+    {
+        QMutexLocker locker(&dataMutex);
+        dynamicDataList.clear();
+        hasNewData = false;
+    }
+
     // 更新测量状态
     isDynamicMeasuring = true;
+    uiUpdateTimer->start();
 
     // 启动测量
     bool su = TRACKER_INTERFACE->startMeasure(API);
@@ -342,10 +360,23 @@ void APILTM::trackDynamicsMeasure()
 
 void APILTM::trackStop()
 {
-
+    uiUpdateTimer->stop();
     TRACKER_INTERFACE->stop();
     // 关闭文件
     if (ui.savaDyPoint->isChecked() && !dynamicDataList.isEmpty()) {
+        // 对数据进行排序（按点名）
+        std::sort(dynamicDataList.begin(), dynamicDataList.end(),
+            [](const QString& a, const QString& b) {
+                // 提取点名部分（假设格式为"dX"）
+                bool ok;
+                int aNum = a.left(a.indexOf('\t')).mid(1).toInt(&ok);
+                if (!ok)
+                    return false;
+                int bNum = b.left(b.indexOf('\t')).mid(1).toInt(&ok);
+                if (!ok)
+                    return false;
+                return aNum < bNum;
+            });
         QString fileName = QString("%1_%2_dynamic.txt")
                                .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss"))
                                .arg(reinterpret_cast<quintptr>(this));
@@ -580,7 +611,7 @@ void APILTM::processOrientationMeasurement(const QSharedPointer<TrackerPoint>& d
             MW::DeleteObservation(ui.workpieceName->currentText(), ui.piontname->text(), ui.stations->currentText());
         }
     }
-    double h_rad= DEG2RAD(h_deg);
+    double h_rad = DEG2RAD(h_deg);
     // 存入观测值（弧度）
     bool success = MW::InsertObservation(
         ui.workpieceName->currentText(),
@@ -640,64 +671,54 @@ void APILTM::handleDynamicData(const QString& ip, const QString& name, const QSt
 
     if (!isDynamicMeasuring)
         return;
-    // 解析数据点
-    auto&& [s, v1, v2, v3, rx, ry, rz, p, px, py, pz, t, hum, press, time] = point;
-    qDebug() << "动态测量数据：" << v1 << v2 << v3;
-    dyPointName = Utils::SuffixAddOne(dyPointName);
-    // 处理时间戳
-    QDateTime timestamp;
-    if (!time.isEmpty()) {
-        timestamp = QDateTime::fromString(time, "yyyy-MM-dd hh:mm:ss.zzz");
-    }
-    if (!timestamp.isValid()) {
-        timestamp = QDateTime::currentDateTime();
-    }
-    auto&& [x, y, z] = GetLkXYZR(v1, v2, v3);
-    auto&& opt = coordinateSystemTransform(ui.coordinateSystem->currentText(), { x, y, z });
-    if (opt.has_value()) {
-        auto&& [_, point] = opt.value();
-        x = point.x();
-        y = point.y();
-        z = point.z();
-    }
-    QMetaObject::invokeMethod(this, [this, x, y, z, point]() {
-        auto&& [s, v1, v2, v3, rx, ry, rz, p, px, py, pz, t, hum, press, time] = point;
-        ui.X->setText(F3(x));
-        ui.Y->setText(F3(y));
-        ui.Z->setText(F3(z));
-        ui.RMSX->setText(F3(px));
-        ui.RMSY->setText(F3(py));
-        ui.RMSZ->setText(F3(pz));
-        ui.RMS->setText(F3(p));
-        ui.tem->setText(QString::number(t));
-        ui.press->setText(QString::number(press));
+    // 加锁保护数据
+    QMutexLocker locker(&dataMutex);
 
-        double h_deg = RAD2DEG(v1);
-        double v_deg = RAD2DEG(v2);
-        h_deg = (h_deg < 0) ? h_deg + 360 : h_deg;
-        ui.hz_value->setText(F3(h_deg));
-        ui.v_value->setText(F3(v_deg));
-        ui.dis_value->setText(F3(v3));
-        ui.tem->setText(QString::number(t));
-        ui.press->setText(QString::number(press));
+    // 在异步任务前生成新点名
+    QString currentPointName = Utils::SuffixAddOne(dyPointName);
+    dyPointName = currentPointName; // 更新全局点名
+
+    // 存储原始数据点
+    latestPoint = point;
+    hasNewData = true;
+    // 异步处理坐标转换
+    auto [x, y, z] = GetLkXYZR(point.v1, point.v2, point.v3);
+    Eigen::Vector3d originalPoint(x, y, z);
+
+    QtConcurrent::run([this, originalPoint, currentPointName, point]() {
+        auto opt = coordinateSystemTransform(ui.coordinateSystem->currentText(), originalPoint);
+
+        QMutexLocker locker(&dataMutex);
+        if (opt.has_value()) {
+            latestTransformedPoint = opt.value().second;
+        } else {
+            latestTransformedPoint = originalPoint;
+        }
+
+        // 在转换完成后保存数据
+        if (ui.savaDyPoint->isChecked()) {
+            QDateTime timestamp = point.time.isEmpty() ? QDateTime::currentDateTime()
+                                                       : QDateTime::fromString(point.time, "yyyy-MM-dd hh:mm:ss.zzz");
+
+            // 使用转换后的坐标
+            double wx = latestTransformedPoint.x();
+            double wy = latestTransformedPoint.y();
+            double wz = latestTransformedPoint.z();
+            if (sigleMeasureType == "定向点测量") {
+                wx = point.v1;
+                wy = point.v2;
+                wz = point.v3;
+            }
+
+            dynamicDataList.append(QString("%1\t%2\t%3\t%4\t%5\n")
+                                       .arg(currentPointName)
+                                       .arg(F4(wx))
+                                       .arg(F4(wy))
+                                       .arg(F4(wz))
+                                       .arg(timestamp.toString("yyyy-MM-dd hh:mm:ss.zzz")));
+        }
     });
-    double wx = x, wy = y, wz = z;
-    if (sigleMeasureType == "定向点测量") {
-        wx = v1;
-        wy = v2;
-        wz = v3;
-    }
-    if (ui.savaDyPoint->isChecked()) {
-        //   将数据存入内存列表
-        dynamicDataList.append(QString("%1\t%2\t%3\t%4\t%5\n")
-                                   .arg(dyPointName)
-                                   .arg(F4(wx))
-                                   .arg(F4(wy))
-                                   .arg(F4(wz))
-                                   .arg(timestamp.toString("yyyy-MM-dd hh:mm:ss.zzz")));
-    }
 }
-
 void APILTM::updateCoordinateSystems(const QString& workpiece)
 {
     auto coordinateSystems = MW::GetWorkpiecesAxis(workpiece);
@@ -713,4 +734,38 @@ void APILTM::updateCoordinateSystems(const QString& workpiece)
     } else {
         TOAST_TIP("获取坐标系失败");
     }
+}
+void APILTM::updateUI()
+{
+    QMutexLocker locker(&dataMutex);
+
+    if (!hasNewData)
+        return;
+
+    auto&& [s, v1, v2, v3, rx, ry, rz, p, px, py, pz, t, hum, press, time] = latestPoint;
+
+    // 使用转换后的坐标
+    double x = latestTransformedPoint.x();
+    double y = latestTransformedPoint.y();
+    double z = latestTransformedPoint.z();
+
+    // 更新UI
+    ui.X->setText(F3(x));
+    ui.Y->setText(F3(y));
+    ui.Z->setText(F3(z));
+    ui.RMSX->setText(F3(px));
+    ui.RMSY->setText(F3(py));
+    ui.RMSZ->setText(F3(pz));
+    ui.RMS->setText(F3(p));
+    ui.tem->setText(QString::number(t));
+    ui.press->setText(QString::number(press));
+
+    double h_deg = RAD2DEG(v1);
+    double v_deg = RAD2DEG(v2);
+    h_deg = (h_deg < 0) ? h_deg + 360 : h_deg;
+    ui.hz_value->setText(F3(h_deg));
+    ui.v_value->setText(F3(v_deg));
+    ui.dis_value->setText(F3(v3));
+
+    hasNewData = false;
 }

@@ -43,8 +43,12 @@ private:
     QString dynamicsMeasureType = "稳定点模式"; // 动态测量方式
     QString _instrumentType;
     constexpr static const char* API = "API";
-
     QStringList dynamicDataList; // 用于存储动态测量数据
+    QTimer* uiUpdateTimer; // UI更新定时器
+    QMutex dataMutex; // 数据互斥锁
+    TrackerFilter::TrackerPoint latestPoint; // 存储最新测量点
+    bool hasNewData = false; // 是否有新数据标志
+    Eigen::Vector3d latestTransformedPoint; // 存储最新转换后的坐标
 public slots:
     /**
      * @brief 连接并初始化跟踪
@@ -116,9 +120,18 @@ public:
      * @return
      */
     std::optional<std::pair<Eigen::Vector3d, Eigen::Vector3d>> coordinateSystemTransform(QString name, Eigen::Vector3d point);
-
-private:
+    /**
+     * @brief 点坐标测量处理函数
+     * @param data
+     */
     void processCoordinateMeasurement(const QSharedPointer<TrackerPoint>& data);
-
+    /**
+     * @brief 定向点测量处理函数
+     * @param data
+     */
     void processOrientationMeasurement(const QSharedPointer<TrackerPoint>& data);
+    /**
+     * @brief 更新动态UI
+     */
+    void updateUI();
 };
