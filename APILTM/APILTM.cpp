@@ -580,13 +580,13 @@ void APILTM::processOrientationMeasurement(const QSharedPointer<TrackerPoint>& d
             MW::DeleteObservation(ui.workpieceName->currentText(), ui.piontname->text(), ui.stations->currentText());
         }
     }
-
+    double h_rad= DEG2RAD(h_deg);
     // 存入观测值（弧度）
     bool success = MW::InsertObservation(
         ui.workpieceName->currentText(),
         ui.piontname->text(),
         ui.stations->currentText(),
-        h, v, d,
+        h_rad, v, d,
         dateTime, t, press);
     if (success) {
         TOAST_TIP("定向点保存成功");
@@ -606,7 +606,7 @@ std::optional<std::pair<Eigen::Vector3d, Eigen::Vector3d>> APILTM ::coordinateSy
         TOAST_TIP("坐标系格式错误: " + name);
         return { std::nullopt };
     }
-
+    qDebug() << "point点坐标系" << point.x() << point.y() << point.z();
     QString workpieceName = parts[0];
     QString sysName = parts[1];
     // 获取测站坐标系
