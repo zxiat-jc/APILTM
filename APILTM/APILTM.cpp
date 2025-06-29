@@ -156,6 +156,10 @@ APILTM::APILTM(QWidget* parent)
     timer->start(1000); // 每500ms检查一次
 
     connect(TF, &TrackerFilter::arrived, this, &APILTM::handleDynamicData);
+
+    if (ui.instrumentType->currentText() == "API"){
+        ui.lineIP->setEnabled(false);
+    }
 }
 
 APILTM::~APILTM()
@@ -217,30 +221,48 @@ void APILTM::listChange()
         [this](const QString& text) {
             qDebug() << "Selected instrument type:" << text;
             _instrumentType = text;
+            if (ui.instrumentType->currentText() == "API") {
+                ui.lineIP->setEnabled(false);
+            }else{
+                ui.lineIP->setEnabled(true);
+            }
             if (TRACKER_INTERFACE && TRACKER_INTERFACE->contains(API)) {
                 TRACKER_INTERFACE->disconnect(API);
                 TRACKER_INTERFACE->remove(API);
             }
         });
-    // 当测站输入框内容变化时，更新测站
-    connect(ui.stations, &QComboBox::editTextChanged, this, [this](const QString& text) {
-        if (!text.isEmpty()) {
-            // 检查测站是否已存在
-            if (!MW::GetStations().has_value() || !MW::GetStations().value().contains(text)) {
-                // 如果不存在，则添加新的测站
-                if (ui.lineIP->text().isEmpty()) {
-                    TOAST_TIP("请输入仪器IP地址");
-                    return;
-                }
-                bool su = MW::AddTracker(text, ui.lineIP->text(), _instrumentType);
-                TOAST_TIP(su ? "测站添加成功" : "测站添加失败");
-            }
-        }
-    });
 }
 
 void APILTM::trackconnectAndStart()
 {
+    QString station = ui.stations->currentText();
+    QString IPs = ui.lineIP->text();
+
+    if (!station.isEmpty()) {
+        // 获取当前所有测站
+        QJsonArray stationsArray = MW::GetStations().value();
+        bool stationExists = false;
+
+        // 遍历检查测站是否已存在
+        for (const QJsonValue& value : stationsArray) {
+            QJsonObject obj = value.toObject();
+            if (obj["name"].toString() == station) { // 直接比较name字段
+                stationExists = true;
+                break;
+            }
+        }
+
+        if (!stationExists) {
+            bool su = MW::AddTracker(station, "0.0.0.0", _instrumentType);
+            if (su){
+                TOAST_TIP("添加成功");
+                ui.workpieceName->addItem(station);
+            }   
+        }
+    }else{
+        TOAST_TIP("测站为空");
+        return;
+    }
 
     if (ui.lineIP->text().isEmpty() && _instrumentType != "API") {
         TOAST_TIP("请输入仪器IP地址");
@@ -250,21 +272,31 @@ void APILTM::trackconnectAndStart()
         if (ui.lineIP->text().isEmpty()) {
             TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
             TRACKER_INTERFACE->connect(API);
-            return;
+            auto apiIPAdess = TRACKER_INTERFACE->ip(API);
+            if (apiIPAdess.has_value()) {
+                 ui.lineIP->setEnabled(true);
+                ui.lineIP->setText(apiIPAdess.value());
+                 ui.lineIP->setEnabled(false);
+                TOAST_TIP("请再次联机");
+                return;
+            } else {
+                TOAST_TIP("获取API IP地址失败");
+                return;
+            }
         }
-        auto apiIPAdess = TRACKER_INTERFACE->ip(API);
-        if (apiIPAdess.has_value()) {
-            ui.lineIP->setText(apiIPAdess.value());
-        } else {
-            TOAST_TIP("获取API IP地址失败");
-            return;
-        }
+       
     }
     if (ui.instrumentType->currentIndex() < 0) {
         TOAST_TIP("请选择仪器类型");
         return;
     }
-    QString IPs = ui.lineIP->text();
+ 
+    //更新测站IP
+   if(! MW::EditTracker(station, IPs, _instrumentType, selectedText)){
+        TOAST_TIP("更新测站IP失败");
+        return;
+   }
+   
     qDebug() << "Connecting to tracker at IP:" << IPs;
     LoadingDialog::ShowLoading(tr("正在初始化..."), false, [&]() {
         TRACKER_INTERFACE->add(ui.lineIP->text(), API, _instrumentType, selectedText);
@@ -299,6 +331,21 @@ void APILTM::trackRefresh()
 
 void APILTM::trackSignalMeasure()
 {
+
+    QJsonArray stationsArray = MW::GetStations().value();
+    bool stationExists = false;
+    // 遍历检查测站是否已存在
+    for (const QJsonValue& value : stationsArray) {
+        QJsonObject obj = value.toObject();
+        if (obj["name"].toString() == ui.stations->currentText()) { // 直接比较name字段
+            stationExists = true;
+            break;
+        }
+    }
+    if (!stationExists) {
+        TOAST_TIP("测站不存在");
+        return;
+    }
     if (ui.workpieceName->currentIndex() < 0) {
         TOAST_TIP("工件名称为空");
         return;
@@ -317,6 +364,20 @@ void APILTM::trackSignalMeasure()
 
 void APILTM::trackDynamicsMeasure()
 {
+    QJsonArray stationsArray = MW::GetStations().value();
+    bool stationExists = false;
+    // 遍历检查测站是否已存在
+    for (const QJsonValue& value : stationsArray) {
+        QJsonObject obj = value.toObject();
+        if (obj["name"].toString() == ui.stations->currentText()) { // 直接比较name字段
+            stationExists = true;
+            break;
+        }
+    }
+    if (!stationExists) {
+        TOAST_TIP("测站不存在");
+        return;
+    }
     // 重置点名计数器
     {
         QMutexLocker locker(&dataMutex);
@@ -359,14 +420,19 @@ void APILTM::trackDynamicsMeasure()
 
 void APILTM::trackStop()
 {
-    uiUpdateTimer->stop();
+
+      // 安全停止定时器
+    if (uiUpdateTimer && uiUpdateTimer->isActive()) {
+        uiUpdateTimer->stop();
+        qDebug() << "UI update timer stopped";
+    }
 
     // 判断是否正在动态测量
 
     // 添加空指针检查
     if (TRACKER_INTERFACE && TRACKER_INTERFACE->contains(API)) {
         TRACKER_INTERFACE->stop();
-    }
+   }
     // 关闭文件
     if (ui.savaDyPoint->isChecked() && !dynamicDataList.isEmpty()) {
         // 对数据进行排序（按点名）
