@@ -37,13 +37,13 @@ APILTM::APILTM(QWidget* parent)
     desktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
 
     {
-        connect(ui.startapi, &QPushButton::clicked, this, &APILTM::trackconnectAndStart);
-        connect(ui.refresh, &QPushButton::clicked, this, &APILTM::trackRefresh);
-        connect(ui.signalmeasure, &QPushButton::clicked, this, &APILTM::trackSignalMeasure);
-        connect(ui.dynamicsmeasure, &QPushButton::clicked, this, &APILTM::trackDynamicsMeasure);
-        connect(ui.stop, &QPushButton::clicked, this, &APILTM::trackStop);
-        connect(ui.exit, &QPushButton::clicked, this, &APILTM::trackExit);
-        connect(ui.backbird, &QPushButton::clicked, this, &APILTM::trackBackBirdNest);
+        connect(ui.startapi, &QPushButton::clicked, this, &APILTM::onCon);
+        connect(ui.refresh, &QPushButton::clicked, this, &APILTM::onRefresh);
+        connect(ui.signalmeasure, &QPushButton::clicked, this, &APILTM::onSignalMeasure);
+        connect(ui.dynamicsmeasure, &QPushButton::clicked, this, &APILTM::onDynamicsMeasure);
+        connect(ui.stop, &QPushButton::clicked, this, &APILTM::onStop);
+        connect(ui.exit, &QPushButton::clicked, this, &APILTM::onExit);
+        connect(ui.backbird, &QPushButton::clicked, this, &APILTM::onBirdNest);
     }
 
     // 测量模式选择QRadioButton
@@ -187,7 +187,7 @@ void APILTM::listChange()
     });
 }
 
-void APILTM::trackconnectAndStart()
+void APILTM::onCon()
 {
     if (ui.instrumentType->currentIndex() < 0) {
         TOAST_TIP("请选择仪器类型");
@@ -260,13 +260,13 @@ void APILTM::trackconnectAndStart()
     }
 }
 
-void APILTM::trackRefresh()
+void APILTM::onRefresh()
 {
     TRACKER_INTERFACE->remove(API);
     this->init();
 }
 
-void APILTM::trackSignalMeasure()
+void APILTM::onSignalMeasure()
 {
     QJsonArray stationsArray = MW::GetStations().value();
     bool stationExists = false;
@@ -298,7 +298,7 @@ void APILTM::trackSignalMeasure()
     }
 }
 
-void APILTM::trackDynamicsMeasure()
+void APILTM::onDynamicsMeasure()
 {
     dyPointName = ui.piontname->text();
     QJsonArray stationsArray = MW::GetStations().value();
@@ -350,7 +350,7 @@ void APILTM::trackDynamicsMeasure()
     }
 }
 
-void APILTM::trackStop()
+void APILTM::onStop()
 {
     // 安全停止定时器
     if (uiUpdateTimer && uiUpdateTimer->isActive()) {
@@ -420,14 +420,14 @@ void APILTM::trackStop()
     });
 }
 
-void APILTM::trackExit()
+void APILTM::onExit()
 {
     TRACKER_INTERFACE->disconnect(API);
     // 关闭当前页面
     this->close();
 }
 
-void APILTM::trackBackBirdNest()
+void APILTM::onBirdNest()
 {
     if (TRACKER_INTERFACE->birdNest(API)) {
         TOAST_TIP("回鸟巢成功");

@@ -51,36 +51,36 @@ public slots:
      * @brief 连接并初始化跟踪
      *
      */
-    void trackconnectAndStart();
+    void onCon();
     /**
      * @brief 刷新
      */
-    void trackRefresh();
+    void onRefresh();
 
     /**
      * @brief 单点测量
      */
-    void trackSignalMeasure();
+    void onSignalMeasure();
 
     /**
      * @brief 动态测量
      */
-    void trackDynamicsMeasure();
+    void onDynamicsMeasure();
 
     /**
      * @brief 停止测量
      */
-    void trackStop();
+    void onStop();
 
     /**
      * @brief 退出
      */
-    void trackExit();
+    void onExit();
 
     /**
      * @brief 回鸟巢
      */
-    void trackBackBirdNest();
+    void onBirdNest();
 
     /**
      * @brief 根据工件名称更新坐标系下拉框
