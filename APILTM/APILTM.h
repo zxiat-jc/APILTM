@@ -33,9 +33,7 @@ public:
 private:
     Ui::APILTMClass ui;
 
-    QFile dataFile; // 数据文件对象
     std::atomic_bool isDynamicMeasuring; // 动态测量状态标志
-    QTextStream dataStream; // 文本流用于写入文件
     QString dyPointName; // 动态测量点名称
     QString desktopPath; // 添加桌面路径变量
     QString sigleMeasureType = "点坐标测量"; // 测量类型

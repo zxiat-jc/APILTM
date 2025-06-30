@@ -346,7 +346,6 @@ void APILTM::trackDynamicsMeasure()
         TOAST_TIP("动态测量开始成功");
     } else {
         TOAST_TIP("动态测量开始失败");
-        dataFile.close();
         isDynamicMeasuring = false;
     }
 }
