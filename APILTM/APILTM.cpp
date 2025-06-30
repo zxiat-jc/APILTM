@@ -381,8 +381,9 @@ void APILTM::trackStop()
             TRACKER_INTERFACE->stop();
         }
         isDynamicMeasuring = false;
-        TOAST_TIP("停止测量成功");
-        if (!ui.savaDyPoint->isChecked() || !dynamicDataList.isEmpty()) {
+        TOAST_TIP("停止测量成功");;
+
+        if (!ui.savaDyPoint->isChecked() || dynamicDataList.isEmpty()) {
             return;
         }
         // 关闭文件
