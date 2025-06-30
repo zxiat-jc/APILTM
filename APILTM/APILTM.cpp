@@ -44,16 +44,8 @@ APILTM::APILTM(QWidget* parent)
         connect(ui.stop, &QPushButton::clicked, this, &APILTM::trackStop);
         connect(ui.exit, &QPushButton::clicked, this, &APILTM::trackExit);
         connect(ui.backbird, &QPushButton::clicked, this, &APILTM::trackBackBirdNest);
-        QObject::connect(ui.instrumentType, &QComboBox::currentIndexChanged, this, &APILTM::onSelectInstrumentType);
     }
-    {
-        QObject::connect(ui.balls, &QComboBox::currentIndexChanged, this, [this](int) {
-            auto&& ball = ui.balls->currentText();
-            if (!ball.isEmpty() && TRACKER_INTERFACE->status(API) != TrackerEnum::MeasurmentStatus::Invalid) {
-                TRACKER_INTERFACE->setBall(API, ball);
-            }
-        });
-    }
+
     // 测量模式选择QRadioButton
     {
         QButtonGroup* measueType = new QButtonGroup(this);
@@ -186,9 +178,16 @@ void APILTM::listChange()
             qDebug() << "Selected instrument type:" << text;
             _instrumentType = text;
             ui.lineIP->setEnabled(ui.instrumentType->currentText() != API);
-            TRACKER_INTERFACE->remove(API);
             ui.balls->clear();
+            LoadingDialog::ShowLoading(tr("正在断开···"), false, []() { TRACKER_INTERFACE->remove(API); });
         });
+
+    QObject::connect(ui.balls, &QComboBox::currentIndexChanged, this, [this](int) {
+        auto&& ball = ui.balls->currentText();
+        if (!ball.isEmpty() && TRACKER_INTERFACE->status(API) != TrackerEnum::MeasurmentStatus::Invalid) {
+            TRACKER_INTERFACE->setBall(API, ball);
+        }
+    });
 }
 
 void APILTM::trackconnectAndStart()
@@ -257,7 +256,7 @@ void APILTM::trackconnectAndStart()
     };
 
     if (_instrumentType != API) {
-        LoadingDialog::ShowLoading(tr("正在初始化..."), false, fun);
+        LoadingDialog::ShowLoading(tr("正在初始化···"), false, fun);
     } else {
         fun();
     }
@@ -315,6 +314,7 @@ void APILTM::trackSignalMeasure()
 
 void APILTM::trackDynamicsMeasure()
 {
+    dyPointName = ui.piontname->text();
     QJsonArray stationsArray = MW::GetStations().value();
     bool stationExists = false;
     // 遍历检查测站是否已存在
@@ -329,14 +329,10 @@ void APILTM::trackDynamicsMeasure()
         TOAST_TIP("测站不存在");
         return;
     }
-    // 重置点名计数器
-    {
-        QMutexLocker locker(&dataMutex);
-        dyPointName = "d0"; // 重置为初始值
-    }
+
     // 初始化UI更新定时器
     uiUpdateTimer = new QTimer(this);
-    uiUpdateTimer->setInterval(200); // 200ms更新一次
+    uiUpdateTimer->setInterval(200);
     connect(uiUpdateTimer, &QTimer::timeout, this, &APILTM::updateUI);
     // 初始化按钮组
     if (dynamicsMeasureType == "时间间隔模式") {
@@ -379,13 +375,18 @@ void APILTM::trackStop()
     }
 
     // 判断是否正在动态测量
+    LoadingDialog::ShowLoading(tr("正在保存···"), false, [this]() {
+        // 添加空指针检查
+        if (TRACKER_INTERFACE && TRACKER_INTERFACE->contains(API)) {
+            TRACKER_INTERFACE->stop();
+        }
+        isDynamicMeasuring = false;
+        TOAST_TIP("停止测量成功");
+        if (!ui.savaDyPoint->isChecked() || !dynamicDataList.isEmpty()) {
+            return;
+        }
+        // 关闭文件
 
-    // 添加空指针检查
-    if (TRACKER_INTERFACE && TRACKER_INTERFACE->contains(API)) {
-        TRACKER_INTERFACE->stop();
-    }
-    // 关闭文件
-    if (ui.savaDyPoint->isChecked() && !dynamicDataList.isEmpty()) {
         // 对数据进行排序（按点名）
         std::sort(dynamicDataList.begin(), dynamicDataList.end(),
             [](const QString& a, const QString& b) {
@@ -405,38 +406,32 @@ void APILTM::trackStop()
         QString fullPath = QDir(desktopPath).filePath(fileName);
 
         QFile file(fullPath);
-        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QTextStream stream(&file);
-
-            // 写入表头
-            if (sigleMeasureType == "点坐标测量") {
-                stream << "\t\t\t\t\t\t动态测量数据记录\n";
-                stream << "点号\tX(mm)\tY(mm)\tZ(mm)\t时间\n";
-            } else if (sigleMeasureType == "定向点测量") {
-                stream << "\t\t\t\t\t\t动态测量数据记录\n";
-                stream << "点号\t水平角(弧度)\t垂直角(弧度)\t斜距(m)\t时间\n";
-            }
-            stream << "----------------------------------------\n";
-
-            // 写入所有数据
-            foreach (const QString& line, dynamicDataList) {
-                stream << line;
-            }
-
-            file.close();
-            TOAST_TIP(QString("动态数据已保存至桌面，共%1条记录").arg(dynamicDataList.count()));
-        } else {
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
             TOAST_TIP("无法创建数据文件: " + fullPath);
+            return;
+        }
+        QTextStream stream(&file);
+
+        // 写入表头
+        if (sigleMeasureType == "点坐标测量") {
+            stream << "\t\t\t\t\t\t动态测量数据记录\n";
+            stream << "点号\tX(mm)\tY(mm)\tZ(mm)\t时间\n";
+        } else if (sigleMeasureType == "定向点测量") {
+            stream << "\t\t\t\t\t\t动态测量数据记录\n";
+            stream << "点号\t水平角(弧度)\t垂直角(弧度)\t斜距(m)\t时间\n";
+        }
+        stream << "----------------------------------------\n";
+
+        // 写入所有数据
+        foreach (const QString& line, dynamicDataList) {
+            stream << line;
         }
 
-        // 清空数据列表
+        file.close();
+        TOAST_TIP(QString("动态数据已保存至桌面，共%1条记录").arg(dynamicDataList.count()));
+
         dynamicDataList.clear();
-    }
-    isDynamicMeasuring = false;
-    TOAST_TIP("停止测量成功");
-    //ui.signalmeasure->setEnabled(true);
-   // ui.backbird->setEnabled(true);
-   // ui.dynamicsmeasure->setEnabled(true);
+    });
 }
 
 void APILTM::trackExit()
@@ -455,18 +450,9 @@ void APILTM::trackBackBirdNest()
     }
 }
 
-void APILTM::onSelectInstrumentType(int index)
-{
-    if (index < 0 || index >= ui.instrumentType->count()) {
-        return; // 无效索引
-    }
-    _instrumentType = ui.instrumentType->itemText(index);
-    qDebug() << "Selected instrument type:" << _instrumentType;
-}
-
 void APILTM::coordinatePointMeasure()
 {
-    LoadingDialog::ShowLoading(tr("正在测量..."), false, [this]() {
+    LoadingDialog::ShowLoading(tr("正在测量···"), false, [this]() {
         auto&& opt = TRACKER_INTERFACE->measure(API, false);
         if (opt.has_value()) {
             // 将数据处理移到主线程
@@ -561,7 +547,7 @@ void APILTM::processCoordinateMeasurement(const QSharedPointer<TrackerPoint>& da
 
 void APILTM::orientationPiontMeasure()
 {
-    LoadingDialog::ShowLoading(tr("正在测量..."), false, [this]() {
+    LoadingDialog::ShowLoading(tr("正在测量···"), false, [this]() {
         auto&& opt = TRACKER_INTERFACE->measure(API, false);
         if (opt.has_value()) {
             QMetaObject::invokeMethod(this, [this, data = opt.value()]() {
@@ -695,10 +681,9 @@ void APILTM::handleDynamicData(const QString& ip, const QString& name, const QSt
         return;
     // 加锁保护数据
     QMutexLocker locker(&dataMutex);
-
     // 在异步任务前生成新点名
     QString currentPointName = Utils::SuffixAddOne(dyPointName);
-    dyPointName = currentPointName; // 更新全局点名
+    dyPointName = currentPointName;
 
     // 存储原始数据点
     latestPoint = point;
@@ -772,6 +757,7 @@ void APILTM::updateUI()
     double z = latestTransformedPoint.z();
 
     // 更新UI
+    ui.piontname->setText(dyPointName);
     ui.X->setText(F3(x));
     ui.Y->setText(F3(y));
     ui.Z->setText(F3(z));
