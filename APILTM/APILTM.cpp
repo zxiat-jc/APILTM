@@ -133,12 +133,8 @@ void APILTM::init()
     qDebug() << instrumentTypes;
     if (instrumentTypes.isEmpty()) {
         TOAST_TIP("没有可用的跟踪仪器类型");
-    } else {
-        for (const auto& tracker : instrumentTypes) {
-            ui.instrumentType->addItem(tracker);
-            _instrumentType = ui.instrumentType->currentText();
-        }
     }
+    ui.instrumentType->addItems(instrumentTypes);
     // 初始化测站
     auto stations = MW::GetStations();
     qDebug() << stations;
@@ -171,12 +167,10 @@ void APILTM::init()
 
 void APILTM::listChange()
 {
-
     // 连接信号槽：仪器类型选择变化
     connect(ui.instrumentType, &QComboBox::currentTextChanged, this,
         [this](const QString& text) {
             qDebug() << "Selected instrument type:" << text;
-            _instrumentType = text;
             ui.lineIP->setEnabled(ui.instrumentType->currentText() != API);
             ui.balls->clear();
             LoadingDialog::ShowLoading(tr("正在断开···"), false, []() { TRACKER_INTERFACE->remove(API); });
@@ -198,7 +192,8 @@ void APILTM::trackconnectAndStart()
     }
 
     auto&& ip = ui.lineIP->text();
-    if (ip.isEmpty() && _instrumentType != API) {
+    auto&& type = ui.instrumentType->currentText();
+    if (ip.isEmpty() && type != API) {
         TOAST_TIP("请输入仪器IP地址");
         return;
     }
@@ -223,20 +218,20 @@ void APILTM::trackconnectAndStart()
     }
 
     if (!stationExists) {
-        bool su = MW::AddTracker(station, ip, _instrumentType);
+        bool su = MW::AddTracker(station, ip, type);
         if (su) {
             TOAST_TIP("添加成功");
             ui.workpieceName->addItem(station);
         }
     }
     // 更新测站IP
-    if (!MW::EditTracker(station, ip, _instrumentType, "")) {
+    if (!MW::EditTracker(station, ip, type, "")) {
         TOAST_TIP("更新测站IP失败");
         return;
     }
 
     qDebug() << "Connecting to tracker at IP:" << ip;
-    TRACKER_INTERFACE->add(ip, API, _instrumentType, "");
+    TRACKER_INTERFACE->add(ip, API, type, "");
 
     std::function<void()> fun = [this, ip]() {
         if (!TRACKER_INTERFACE->connect(API)) {
@@ -255,7 +250,7 @@ void APILTM::trackconnectAndStart()
         });
     };
 
-    if (_instrumentType != API) {
+    if (type != API) {
         LoadingDialog::ShowLoading(tr("正在初始化···"), false, fun);
     } else {
         fun();
@@ -264,15 +259,11 @@ void APILTM::trackconnectAndStart()
 
 void APILTM::trackRefresh()
 {
-    bool ad;
     bool re = TRACKER_INTERFACE->remove(API);
-    if (_instrumentType == API) {
-        ad = TRACKER_INTERFACE->add(ui.lineIP->text(), API, _instrumentType, "");
-    } else {
-        ad = TRACKER_INTERFACE->add(ui.lineIP->text(), API, _instrumentType, "");
-    }
+    auto&& type = ui.instrumentType->currentText();
+    TRACKER_INTERFACE->add(ui.lineIP->text(), API, type, "");
     bool co = TRACKER_INTERFACE->connect(API);
-    if (re && ad && co) {
+    if (re && co) {
         TOAST_TIP("刷新成功");
     } else {
         TOAST_TIP("刷新失败");
@@ -281,7 +272,6 @@ void APILTM::trackRefresh()
 
 void APILTM::trackSignalMeasure()
 {
-
     QJsonArray stationsArray = MW::GetStations().value();
     bool stationExists = false;
     // 遍历检查测站是否已存在
@@ -367,7 +357,6 @@ void APILTM::trackDynamicsMeasure()
 
 void APILTM::trackStop()
 {
-
     // 安全停止定时器
     if (uiUpdateTimer && uiUpdateTimer->isActive()) {
         uiUpdateTimer->stop();
@@ -381,7 +370,8 @@ void APILTM::trackStop()
             TRACKER_INTERFACE->stop();
         }
         isDynamicMeasuring = false;
-        TOAST_TIP("停止测量成功");;
+        TOAST_TIP("停止测量成功");
+        ;
 
         if (!ui.savaDyPoint->isChecked() || dynamicDataList.isEmpty()) {
             return;
@@ -677,7 +667,6 @@ std::optional<std::pair<Eigen::Vector3d, Eigen::Vector3d>> APILTM ::coordinateSy
 
 void APILTM::handleDynamicData(const QString& ip, const QString& name, const QString& type, TrackerFilter::TrackerPoint point)
 {
-
     if (!isDynamicMeasuring)
         return;
     // 加锁保护数据
@@ -719,11 +708,11 @@ void APILTM::handleDynamicData(const QString& ip, const QString& name, const QSt
             }
 
             dynamicDataList.append(QString("%1\t%2\t%3\t%4\t%5\n")
-                                       .arg(currentPointName)
-                                       .arg(F4(wx))
-                                       .arg(F4(wy))
-                                       .arg(F4(wz))
-                                       .arg(timestamp.toString("yyyy-MM-dd hh:mm:ss.zzz")));
+                    .arg(currentPointName)
+                    .arg(F4(wx))
+                    .arg(F4(wy))
+                    .arg(F4(wz))
+                    .arg(timestamp.toString("yyyy-MM-dd hh:mm:ss.zzz")));
         }
     });
 }

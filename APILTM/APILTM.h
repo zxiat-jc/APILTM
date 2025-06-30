@@ -40,7 +40,7 @@ private:
     QString desktopPath; // 添加桌面路径变量
     QString sigleMeasureType = "点坐标测量"; // 测量类型
     QString dynamicsMeasureType = "稳定点模式"; // 动态测量方式
-    QString _instrumentType;
+
     constexpr static const char* API = "API";
     QStringList dynamicDataList; // 用于存储动态测量数据
     QTimer* uiUpdateTimer; // UI更新定时器
