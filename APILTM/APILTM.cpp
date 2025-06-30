@@ -1,5 +1,7 @@
 ﻿#include "APILTM.h"
 
+#include <functional>
+
 #include "DbServe.h"
 #include "LoadingDialog.h"
 #include "QPluginManager.h"
@@ -23,26 +25,14 @@ APILTM::APILTM(QWidget* parent)
     ui.setupUi(this);
     init(); // 初始化
     listChange(); // 列表改变
-    // 添加图片到指定位置
-    QPixmap red(":/res/p1.png");
-    // 设置图片大小
-    red = red.scaled(54, 41);
-    ui.picture->setPixmap(red);
+    QTimer::singleShot(0, this, [this]() { Utils::Gui::LabelImageMax(ui.picture, ":/res/p1.png"); });
+
     // 设置stations可编辑
     ui.stations->setEditable(true);
-
-    auto hideAndRetain = [](QWidget* w) {
-        w->hide();
-        QSizePolicy sp = w->sizePolicy();
-        sp.setRetainSizeWhenHidden(true);
-        w->setSizePolicy(sp);
-    };
-
-    hideAndRetain(ui.stabilityPoint);
-    hideAndRetain(ui.stabilitydis);
-    hideAndRetain(ui.stabilitytime);
-    hideAndRetain(ui.label_15);
-    hideAndRetain(ui.label_14);
+    ui.signalmeasure->setEnabled(false);
+    ui.backbird->setEnabled(false);
+    ui.dynamicsmeasure->setEnabled(false);
+    ui.stop->setEnabled(false);
     // 获取桌面路径
     desktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
 
@@ -56,29 +46,13 @@ APILTM::APILTM(QWidget* parent)
         connect(ui.backbird, &QPushButton::clicked, this, &APILTM::trackBackBirdNest);
         QObject::connect(ui.instrumentType, &QComboBox::currentIndexChanged, this, &APILTM::onSelectInstrumentType);
     }
-
     {
-        // 初始化按钮组
-        QButtonGroup* radioGroup = new QButtonGroup(this);
-        radioGroup->addButton(ui.radioButton, 1); // 设置 ID 为 1
-        radioGroup->addButton(ui.radioButton_2, 2);
-        radioGroup->addButton(ui.radioButton_3, 3);
-        radioGroup->addButton(ui.radioButton_4, 4);
-
-        // 默认选中第一个
-        ui.radioButton->setChecked(true);
-        connect(radioGroup, &QButtonGroup::buttonClicked, this,
-            [this](QAbstractButton* button) {
-                if (button == ui.radioButton) {
-                    selectedText = "RRR 1.5in";
-                } else if (button == ui.radioButton_2) {
-                    selectedText = "RRR 0.5in";
-                } else if (button == ui.radioButton_3) {
-                    selectedText = "RRR 7/9in";
-                } else if (button == ui.radioButton_4) {
-                    selectedText = "Auto";
-                }
-            });
+        QObject::connect(ui.balls, &QComboBox::currentIndexChanged, this, [this](int) {
+            auto&& ball = ui.balls->currentText();
+            if (!ball.isEmpty() && TRACKER_INTERFACE->status(API) != TrackerEnum::MeasurmentStatus::Invalid) {
+                TRACKER_INTERFACE->setBall(API, ball);
+            }
+        });
     }
     // 测量模式选择QRadioButton
     {
@@ -120,44 +94,34 @@ APILTM::APILTM(QWidget* parent)
             });
     }
 
-    QTimer* timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, [this]() {
-        auto st = TRACKER_INTERFACE->status(API);
-
-        if (st == TrackerEnum::MeasurmentStatus::ReadyToMeasure) {
+    QObject::connect(TF, &TrackerFilter::statused, this, [this](const QString& ip, const QString& name, const QString& type, TrackerFilter::MeasurmentStatus st) {
+        if (st == TrackerFilter::MeasurmentStatus::ReadyToMeasure) {
             // 测量准备就绪
-            QPixmap pix(":/res/p4.png");
-            pix = pix.scaled(54, 41);
-            ui.picture->setPixmap(pix);
+            Utils::Gui::LabelImageMax(ui.picture, ":/res/p4.png");
             ui.signalmeasure->setEnabled(true);
             ui.backbird->setEnabled(true);
             ui.dynamicsmeasure->setEnabled(true);
             ui.stop->setEnabled(true);
-        } else if (st == TrackerEnum::MeasurmentStatus::MeasurementInProgress) {
+        } else if (st == TrackerFilter::MeasurmentStatus::NotReady || st == TrackerFilter::MeasurmentStatus::MeasurementInProgress) {
             // 测量进行中
-            QPixmap pix(":/res/p2.png");
-            pix = pix.scaled(54, 41);
-            ui.picture->setPixmap(pix);
+            Utils::Gui::LabelImageMax(ui.picture, ":/res/p2.png");
             ui.signalmeasure->setEnabled(false);
-            ui.backbird->setEnabled(false);
+            ui.backbird->setEnabled(true);
             ui.dynamicsmeasure->setEnabled(false);
             ui.stop->setEnabled(true);
         } else {
             // 测量未就绪或无效状态
-            QPixmap pix(":/res/p1.png");
-            pix = pix.scaled(54, 41);
-            ui.picture->setPixmap(pix);
+            Utils::Gui::LabelImageMax(ui.picture, ":/res/p1.png");
             ui.signalmeasure->setEnabled(false);
             ui.backbird->setEnabled(false);
             ui.dynamicsmeasure->setEnabled(false);
             ui.stop->setEnabled(false);
         }
     });
-    timer->start(1000); // 每500ms检查一次
 
     connect(TF, &TrackerFilter::arrived, this, &APILTM::handleDynamicData);
 
-    if (ui.instrumentType->currentText() == "API"){
+    if (ui.instrumentType->currentText() == API) {
         ui.lineIP->setEnabled(false);
     }
 }
@@ -221,105 +185,92 @@ void APILTM::listChange()
         [this](const QString& text) {
             qDebug() << "Selected instrument type:" << text;
             _instrumentType = text;
-            if (ui.instrumentType->currentText() == "API") {
-                ui.lineIP->setEnabled(false);
-            }else{
-                ui.lineIP->setEnabled(true);
-            }
-            if (TRACKER_INTERFACE && TRACKER_INTERFACE->contains(API)) {
-                TRACKER_INTERFACE->disconnect(API);
-                TRACKER_INTERFACE->remove(API);
-            }
+            ui.lineIP->setEnabled(ui.instrumentType->currentText() != API);
+            TRACKER_INTERFACE->remove(API);
+            ui.balls->clear();
         });
 }
 
 void APILTM::trackconnectAndStart()
 {
-    QString station = ui.stations->currentText();
-    QString IPs = ui.lineIP->text();
-
-    if (!station.isEmpty()) {
-        // 获取当前所有测站
-        QJsonArray stationsArray = MW::GetStations().value();
-        bool stationExists = false;
-
-        // 遍历检查测站是否已存在
-        for (const QJsonValue& value : stationsArray) {
-            QJsonObject obj = value.toObject();
-            if (obj["name"].toString() == station) { // 直接比较name字段
-                stationExists = true;
-                break;
-            }
-        }
-
-        if (!stationExists) {
-            bool su = MW::AddTracker(station, "0.0.0.0", _instrumentType);
-            if (su){
-                TOAST_TIP("添加成功");
-                ui.workpieceName->addItem(station);
-            }   
-        }
-    }else{
-        TOAST_TIP("测站为空");
-        return;
-    }
-
-    if (ui.lineIP->text().isEmpty() && _instrumentType != "API") {
-        TOAST_TIP("请输入仪器IP地址");
-        return;
-    }
-    if (_instrumentType == "API") {
-        if (ui.lineIP->text().isEmpty()) {
-            TRACKER_INTERFACE->add("0.0.0.0", API, _instrumentType, selectedText);
-            TRACKER_INTERFACE->connect(API);
-            auto apiIPAdess = TRACKER_INTERFACE->ip(API);
-            if (apiIPAdess.has_value()) {
-                 ui.lineIP->setEnabled(true);
-                ui.lineIP->setText(apiIPAdess.value());
-                 ui.lineIP->setEnabled(false);
-                TOAST_TIP("请再次联机");
-                return;
-            } else {
-                TOAST_TIP("获取API IP地址失败");
-                return;
-            }
-        }
-       
-    }
     if (ui.instrumentType->currentIndex() < 0) {
         TOAST_TIP("请选择仪器类型");
         return;
     }
- 
-    //更新测站IP
-   if(! MW::EditTracker(station, IPs, _instrumentType, selectedText)){
+
+    auto&& ip = ui.lineIP->text();
+    if (ip.isEmpty() && _instrumentType != API) {
+        TOAST_TIP("请输入仪器IP地址");
+        return;
+    }
+
+    QString station = ui.stations->currentText();
+    if (station.isEmpty()) {
+        TOAST_TIP("测站为空");
+        return;
+    }
+
+    // 获取当前所有测站
+    QJsonArray stationsArray = MW::GetStations().value();
+    bool stationExists = false;
+
+    // 遍历检查测站是否已存在
+    for (const QJsonValue& value : stationsArray) {
+        QJsonObject obj = value.toObject();
+        if (obj["name"].toString() == station) { // 直接比较name字段
+            stationExists = true;
+            break;
+        }
+    }
+
+    if (!stationExists) {
+        bool su = MW::AddTracker(station, ip, _instrumentType);
+        if (su) {
+            TOAST_TIP("添加成功");
+            ui.workpieceName->addItem(station);
+        }
+    }
+    // 更新测站IP
+    if (!MW::EditTracker(station, ip, _instrumentType, "")) {
         TOAST_TIP("更新测站IP失败");
         return;
-   }
-   
-    qDebug() << "Connecting to tracker at IP:" << IPs;
-    LoadingDialog::ShowLoading(tr("正在初始化..."), false, [&]() {
-        TRACKER_INTERFACE->add(ui.lineIP->text(), API, _instrumentType, selectedText);
-        if (TRACKER_INTERFACE->connect(API)) {
-            if (TRACKER_INTERFACE->init(API)) {
-                TOAST_TIP("初始化成功");
-            } else {
-                TOAST_TIP("初始化失败");
-            }
-        } else {
+    }
+
+    qDebug() << "Connecting to tracker at IP:" << ip;
+    TRACKER_INTERFACE->add(ip, API, _instrumentType, "");
+
+    std::function<void()> fun = [this, ip]() {
+        if (!TRACKER_INTERFACE->connect(API)) {
             TOAST_TIP("连接失败");
+            return;
         }
-    });
+
+        QMetaObject::invokeMethod(this, [this]() {
+            ui.balls->clear();
+            auto&& balls = TRACKER_INTERFACE->balls(API);
+            // 逆序
+            std::reverse(balls.begin(), balls.end());
+            ui.balls->addItems(balls);
+            TRACKER_INTERFACE->setBall(API, ui.balls->currentText());
+            ui.lineIP->setText(TRACKER_INTERFACE->ip(API).value_or(""));
+        });
+    };
+
+    if (_instrumentType != API) {
+        LoadingDialog::ShowLoading(tr("正在初始化..."), false, fun);
+    } else {
+        fun();
+    }
 }
 
 void APILTM::trackRefresh()
 {
     bool ad;
     bool re = TRACKER_INTERFACE->remove(API);
-    if (_instrumentType == "API") {
-        ad = TRACKER_INTERFACE->add(ui.lineIP->text(), API, _instrumentType, selectedText);
+    if (_instrumentType == API) {
+        ad = TRACKER_INTERFACE->add(ui.lineIP->text(), API, _instrumentType, "");
     } else {
-        ad = TRACKER_INTERFACE->add(ui.lineIP->text(), API, _instrumentType, selectedText);
+        ad = TRACKER_INTERFACE->add(ui.lineIP->text(), API, _instrumentType, "");
     }
     bool co = TRACKER_INTERFACE->connect(API);
     if (re && ad && co) {
@@ -421,7 +372,7 @@ void APILTM::trackDynamicsMeasure()
 void APILTM::trackStop()
 {
 
-      // 安全停止定时器
+    // 安全停止定时器
     if (uiUpdateTimer && uiUpdateTimer->isActive()) {
         uiUpdateTimer->stop();
         qDebug() << "UI update timer stopped";
@@ -432,7 +383,7 @@ void APILTM::trackStop()
     // 添加空指针检查
     if (TRACKER_INTERFACE && TRACKER_INTERFACE->contains(API)) {
         TRACKER_INTERFACE->stop();
-   }
+    }
     // 关闭文件
     if (ui.savaDyPoint->isChecked() && !dynamicDataList.isEmpty()) {
         // 对数据进行排序（按点名）
@@ -483,9 +434,9 @@ void APILTM::trackStop()
     }
     isDynamicMeasuring = false;
     TOAST_TIP("停止测量成功");
-    ui.signalmeasure->setEnabled(true);
-    ui.backbird->setEnabled(true);
-    ui.dynamicsmeasure->setEnabled(true);
+    //ui.signalmeasure->setEnabled(true);
+   // ui.backbird->setEnabled(true);
+   // ui.dynamicsmeasure->setEnabled(true);
 }
 
 void APILTM::trackExit()

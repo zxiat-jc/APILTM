@@ -115,6 +115,12 @@
     <ProjectReference Include="..\..\Ado\MetroinWrap\MetroinWrap.vcxproj">
       <Project>{04ae4451-53e2-489e-b99b-f8fb8dc3bab1}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\APIPlusSDKCXX\APIPlusSDKCXX\APIPlusSDKCXX.vcxproj">
+      <Project>{eb82beb9-bb04-4786-b276-1d76ac2cc137}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\APISDKCXX\APISDKCXX\APISDKCXX.vcxproj">
+      <Project>{60524504-14b3-4e9b-8954-1376c170ef61}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\LMPSDKCXX\LMPSDKCXX\LMPSDKCXX.vcxproj">
       <Project>{d38de3fe-1f2f-44ea-a3f9-c159431c1f4f}</Project>
     </ProjectReference>
@@ -133,8 +139,14 @@
     <ProjectReference Include="..\..\QUtils\QUtils\QUtils.vcxproj">
       <Project>{4d71bf2e-541a-4e75-a15b-960a03d242a1}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\TimerPool\TimerPool\TimerPool.vcxproj">
+      <Project>{dc5ac1bc-af8b-477f-b057-1c24c3e8ce53}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\Toast\Toast\Toast.vcxproj">
       <Project>{6481e78a-2e78-4e65-b975-b908fd00d9d7}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\TrackerAPIPlusPlugin\TrackerAPIPlusPlugin\TrackerAPIPlusPlugin.vcxproj">
+      <Project>{02480802-9958-45e7-8b6b-43baf59669ea}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\TrackerFilter\TrackerFilter\TrackerFilter.vcxproj">
       <Project>{46e31cbb-10e9-44ea-9001-36fdbf24e834}</Project>
