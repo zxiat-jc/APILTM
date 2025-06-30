@@ -523,9 +523,7 @@ void APILTM::processCoordinateMeasurement(const QSharedPointer<TrackerPoint>& da
         dateTime);
 
     if (success) {
-        // 更新点名
-        pointName = Utils::SuffixAddOne(ui.piontname->text());
-        ui.piontname->setText(pointName);
+        ui.piontname->setText(Utils::SuffixAddOne(ui.piontname->text()));
         TOAST_TIP("点坐标测量成功");
     } else {
         TOAST_TIP("保存失败");
@@ -616,8 +614,7 @@ void APILTM::processOrientationMeasurement(const QSharedPointer<TrackerPoint>& d
         dateTime, t, press);
     if (success) {
         TOAST_TIP("定向点保存成功");
-        pointName = Utils::SuffixAddOne(ui.piontname->text());
-        ui.piontname->setText(pointName);
+        ui.piontname->setText(Utils::SuffixAddOne(ui.piontname->text()));
     } else {
         TOAST_TIP("定向点保存失败");
         return;

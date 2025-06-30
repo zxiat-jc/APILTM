@@ -32,7 +32,7 @@ public:
 
 private:
     Ui::APILTMClass ui;
-    QString pointName; // 点名称
+
     QFile dataFile; // 数据文件对象
     std::atomic_bool isDynamicMeasuring; // 动态测量状态标志
     QTextStream dataStream; // 文本流用于写入文件
