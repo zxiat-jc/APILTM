@@ -128,40 +128,43 @@ APILTM::~APILTM()
 
 void APILTM::init()
 {
-    // 初始化获取跟踪仪列表
-    auto instrumentTypes = TRACKER_INTERFACE->supportType();
-    qDebug() << instrumentTypes;
-    if (instrumentTypes.isEmpty()) {
-        TOAST_TIP("没有可用的跟踪仪器类型");
+    {
+        ui.instrumentType->clear();
+        // 初始化获取跟踪仪列表
+        auto instrumentTypes = TRACKER_INTERFACE->supportType();
+        qDebug() << instrumentTypes;
+        if (instrumentTypes.isEmpty()) {
+            TOAST_TIP("没有可用的跟踪仪器类型");
+        }
+        ui.instrumentType->addItems(instrumentTypes);
     }
-    ui.instrumentType->addItems(instrumentTypes);
-    // 初始化测站
-    auto stations = MW::GetStations();
-    qDebug() << stations;
-    if (stations.has_value()) {
-        for (const auto& system : stations.value()) {
-            QJsonObject obj = system.toObject();
-            qDebug() << obj;
-            QString st = obj["name"].toString();
-            if (!st.isEmpty()) {
-                ui.stations->addItem(st);
+    {
+        ui.stations->clear();
+        // 初始化测站
+        auto stations = MW::GetStations();
+        qDebug() << stations;
+        if (stations.has_value()) {
+            for (const auto& system : stations.value()) {
+                QString st = system.toObject()["name"].toString();
+                if (!st.isEmpty()) {
+                    ui.stations->addItem(st);
+                }
             }
         }
-    } else {
-        TOAST_TIP("获取测站失败");
     }
-    // 初始化仪器类型下拉框
-    auto workpieces = MW::GetWorkpieces();
-    if (workpieces.has_value()) {
-        auto&& arr = workpieces.value();
-        for (const auto& item : arr) {
-            QJsonObject obj = item.toObject();
-            QString name = obj["工件名"].toString();
-            updateCoordinateSystems(name);
-            ui.workpieceName->addItem(name);
+    {
+        ui.workpieceName->clear();
+        // 初始化仪器类型下拉框
+        auto workpieces = MW::GetWorkpieces();
+        if (workpieces.has_value()) {
+            auto&& arr = workpieces.value();
+            for (const auto& item : arr) {
+                QJsonObject obj = item.toObject();
+                QString name = obj["工件名"].toString();
+                updateCoordinateSystems(name);
+                ui.workpieceName->addItem(name);
+            }
         }
-    } else {
-        TOAST_TIP("获取工件失败");
     }
 }
 
@@ -259,15 +262,8 @@ void APILTM::trackconnectAndStart()
 
 void APILTM::trackRefresh()
 {
-    bool re = TRACKER_INTERFACE->remove(API);
-    auto&& type = ui.instrumentType->currentText();
-    TRACKER_INTERFACE->add(ui.lineIP->text(), API, type, "");
-    bool co = TRACKER_INTERFACE->connect(API);
-    if (re && co) {
-        TOAST_TIP("刷新成功");
-    } else {
-        TOAST_TIP("刷新失败");
-    }
+    TRACKER_INTERFACE->remove(API);
+    this->init();
 }
 
 void APILTM::trackSignalMeasure()
