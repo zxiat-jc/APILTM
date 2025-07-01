@@ -262,8 +262,12 @@ void APILTM::onCon()
 
 void APILTM::onRefresh()
 {
-    TRACKER_INTERFACE->remove(API);
-    this->init();
+    LoadingDialog::ShowLoading(tr("正在刷新···"), false, [this]() {
+        TRACKER_INTERFACE->remove(API);
+        QTimer::singleShot(0, this, [this]() {
+            this->init();
+        });
+    });
 }
 
 void APILTM::onSignalMeasure()
