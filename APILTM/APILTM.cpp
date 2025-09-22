@@ -53,7 +53,10 @@ APILTM::APILTM(QWidget* parent)
         measueType->addButton(ui.orientationPiont, 2);
         // 默认选中第一个
         ui.coordinatePoint->setChecked(true);
-        connect(measueType, &QButtonGroup::buttonClicked, this,
+        sigleMeasureType = "点坐标测量";
+        connect(measueType,
+            static_cast<void (QButtonGroup::*)(QAbstractButton*)>(&QButtonGroup::buttonClicked),
+            this,
             [this](QAbstractButton* button) {
                 if (button == ui.coordinatePoint) {
                     sigleMeasureType = "点坐标测量";
@@ -72,7 +75,9 @@ APILTM::APILTM(QWidget* parent)
         // 默认选中第1个
         ui.distance_mm->setEnabled(false);
         ui.time_ms->setEnabled(true);
-        connect(dynamicsType, &QButtonGroup::buttonClicked, this,
+        connect(dynamicsType,
+            static_cast<void (QButtonGroup::*)(QAbstractButton*)>(&QButtonGroup::buttonClicked),
+            this,
             [this](QAbstractButton* button) {
                 if (button == ui.timeInterval) {
                     dynamicsMeasureType = "时间间隔模式";
@@ -120,10 +125,6 @@ APILTM::APILTM(QWidget* parent)
 
 APILTM::~APILTM()
 {
-    if (TRACKER_INTERFACE && TRACKER_INTERFACE->contains(API)) {
-        TRACKER_INTERFACE->disconnect(API);
-        TRACKER_INTERFACE->remove(API);
-    }
 }
 
 void APILTM::init()
@@ -142,7 +143,7 @@ void APILTM::init()
         ui.stations->clear();
         // 初始化测站
         auto stations = MW::GetStations();
-        qDebug() << stations;
+        // qDebug() << stations;
         if (stations.has_value()) {
             for (const auto& system : stations.value()) {
                 QString st = system.toObject()["name"].toString();
@@ -179,7 +180,7 @@ void APILTM::listChange()
             LoadingDialog::ShowLoading(tr("正在断开···"), false, []() { TRACKER_INTERFACE->remove(API); });
         });
 
-    QObject::connect(ui.balls, &QComboBox::currentIndexChanged, this, [this](int) {
+    connect(ui.balls, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
         auto&& ball = ui.balls->currentText();
         if (!ball.isEmpty() && TRACKER_INTERFACE->status(API) != TrackerEnum::MeasurmentStatus::Invalid) {
             TRACKER_INTERFACE->setBall(API, ball);

@@ -21,6 +21,10 @@ mono_crash.*
 [Dd]ebugPublic/
 [Rr]elease/
 [Rr]eleases/
+Qt5[Dd]ebug/
+Qt5[Dd]ebugPublic/
+Qt5[Rr]elease/
+Qt5[Rr]eleases/
 x64/
 x86/
 [Ww][Ii][Nn]32/
@@ -131,6 +135,9 @@ $tf/
 _ReSharper*/
 *.[Rr]e[Ss]harper
 *.DotSettings.user
+
+# JustCode is a .NET coding add-in
+.JustCode
 
 # TeamCity is a build add-in
 _TeamCity*
@@ -309,6 +316,10 @@ paket-files/
 # FAKE - F# Make
 .fake/
 
+# JetBrains Rider
+.idea/
+*.sln.iml
+
 # CodeRush personal settings
 .cr/personal
 
@@ -361,3 +372,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+screenshot*
+
+# screenshot.svg可同步
+!screenshot.svg
+!bin/

@@ -22,7 +22,7 @@ void initLock(QApplication& a)
         qDebug() << "程序退出";
         QFile file(QCoreApplication::applicationDirPath() + "/.run.lock");
         if (file.exists()) {
-            file.remove();
+             file.remove();
         }
     });
 }
@@ -33,15 +33,16 @@ void initAdo(QApplication& a)
     QString path = QCoreApplication::applicationDirPath() + "/Ado.exe";
     // 头尾添加双引号,避免路径中有空格
     path = "\"" + path + "\"";
+    qDebug() << "Ado.exe路径:" << path;
     // 进程终止消息
     QObject::connect(process, static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished), [=](int exitCode, QProcess::ExitStatus exitStatus) {
         qDebug() << "Ado.exe进程终止";
         // 1s后重启
         QTimer::singleShot(1000, [=]() {
-            process->start(path);
+            process->start(path, QStringList());
         });
     });
-    process->start(path);
+    process->start(path, QStringList());
 }
 
 int main(int argc, char* argv[])
